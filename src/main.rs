@@ -40,6 +40,8 @@ fn fetch(input: &str) -> anyhow::Result<(String, bool)> {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    let page_url = cli.input.as_deref().filter(|s| is_url(s));
+
     let (input, is_js) = match &cli.input {
         Some(src) => fetch(src)?,
         None => {
@@ -49,18 +51,17 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let result = render(&input, is_js)?;
+    let result = render(&input, is_js, page_url)?;
 
     match &cli.output {
         Some(path) => fs::write(path, &result)?,
         None => io::stdout().write_all(result.as_bytes())?,
     }
 
-
     Ok(())
 }
 
-fn render(input: &str, is_js: bool) -> anyhow::Result<String> {
+fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
     let html = if is_js {
         format!(
             "<!DOCTYPE html><html><head></head><body><script>{input}</script></body></html>"
@@ -73,7 +74,7 @@ fn render(input: &str, is_js: bool) -> anyhow::Result<String> {
     let scripts = doc.extract_scripts();
 
     let rt = runtime::JsRuntime::new();
-    rt.execute(&scripts)?;
+    rt.execute(&scripts, page_url)?;
 
     for msg in rt.logged_messages() {
         eprintln!("[console] {msg}");
@@ -94,7 +95,7 @@ mod tests {
             r#"<script>document.write("<p>Hello from JS!</p>"); console.log("done");</script>"#,
             "</body></html>"
         );
-        let out = render(input, false).unwrap();
+        let out = render(input, false, None).unwrap();
         assert!(out.contains("<h1>Before</h1>"), "static content preserved");
         assert!(out.contains("<p>Hello from JS!</p>"), "document.write injected");
     }
@@ -107,7 +108,7 @@ mod tests {
             r#"document.write("</ul>");"#, "\n",
             r#"console.log("rendered", 3, "items");"#,
         );
-        let out = render(js, true).unwrap();
+        let out = render(js, true, None).unwrap();
         assert!(out.contains("<li>Item 1</li>"), "first item");
         assert!(out.contains("<li>Item 2</li>"), "second item");
         assert!(out.contains("<li>Item 3</li>"), "third item");
@@ -117,7 +118,7 @@ mod tests {
     fn console_messages_captured() {
         let js = r#"console.log("hello", "world"); console.warn("oops");"#;
         let rt = runtime::JsRuntime::new();
-        rt.execute(&[js.to_owned()]).unwrap();
+        rt.execute(&[js.to_owned()], None).unwrap();
         let msgs = rt.logged_messages();
         assert_eq!(msgs[0], "hello world");
         assert_eq!(msgs[1], "oops");
@@ -126,7 +127,62 @@ mod tests {
     #[test]
     fn document_writeln_adds_newline() {
         let js = r#"document.writeln("line1"); document.writeln("line2");"#;
-        let out = render(js, true).unwrap();
+        let out = render(js, true, None).unwrap();
         assert!(out.contains("line1\nline2\n"), "writeln appends newline");
+    }
+
+    // --- new tests for browser globals ---
+
+    #[test]
+    fn window_aliases_global() {
+        // window.document.write must work (window === globalThis)
+        let js = r#"window.document.write("<p>via window</p>");"#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<p>via window</p>"), "window.document.write works");
+    }
+
+    #[test]
+    fn script_errors_are_non_fatal() {
+        // A throwing script must not prevent subsequent scripts from running.
+        let html = concat!(
+            "<!DOCTYPE html><html><body>",
+            "<script>throw new Error('deliberate');</script>",
+            "<script>document.write('<p>survived</p>');</script>",
+            "</body></html>"
+        );
+        let out = render(html, false, None).unwrap();
+        assert!(out.contains("<p>survived</p>"), "rendering continues after script error");
+    }
+
+    #[test]
+    fn location_href_reflects_page_url() {
+        let js = r#"document.write(window.location.href);"#;
+        let out = render(js, true, Some("https://example.com/page")).unwrap();
+        assert!(out.contains("https://example.com/page"), "location.href set from page_url");
+    }
+
+    #[test]
+    fn common_globals_accessible() {
+        // navigator, setTimeout, matchMedia, MutationObserver must not throw.
+        let js = r#"
+            var ua = window.navigator.userAgent;
+            var tid = window.setTimeout(function(){}, 100);
+            var mq  = window.matchMedia('(max-width: 768px)');
+            var mo  = new window.MutationObserver(function(){});
+            document.write('<p>' + ua + '</p>');
+        "#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<p>rakers/"), "navigator.userAgent accessible");
+    }
+
+    #[test]
+    fn document_create_element_is_accessible() {
+        let js = r#"
+            var el = document.createElement('div');
+            el.className = 'test';
+            document.write('<p>' + el.className + '</p>');
+        "#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<p>test</p>"), "createElement stub works");
     }
 }
