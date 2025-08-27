@@ -80,7 +80,7 @@ fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<St
         eprintln!("[console] {msg}");
     }
 
-    Ok(doc.serialize_with_injection(&rt.written_html()))
+    Ok(doc.serialize_with_body_and_injection(&rt.body_inner_html(), &rt.written_html()))
 }
 
 #[cfg(test)]
@@ -184,5 +184,52 @@ mod tests {
         "#;
         let out = render(js, true, None).unwrap();
         assert!(out.contains("<p>test</p>"), "createElement stub works");
+    }
+
+    // ── DOM-mutation rendering (the main improvement) ────────────────────────
+
+    #[test]
+    fn body_inner_html_set_directly() {
+        let js = r#"document.body.innerHTML = '<h1>Set directly</h1>';"#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<h1>Set directly</h1>"), "body.innerHTML = '...' captured");
+    }
+
+    #[test]
+    fn append_child_to_body() {
+        let js = r#"
+            var h1 = document.createElement('h1');
+            h1.innerHTML = 'Appended';
+            document.body.appendChild(h1);
+        "#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<h1>Appended</h1>"), "appendChild serialized into output");
+    }
+
+    #[test]
+    fn nested_elements_serialized() {
+        let js = r#"
+            var ul = document.createElement('ul');
+            for (var i = 1; i <= 3; i++) {
+                var li = document.createElement('li');
+                li.innerHTML = 'Item ' + i;
+                ul.appendChild(li);
+            }
+            document.body.appendChild(ul);
+        "#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<li>Item 1</li>"), "nested li 1");
+        assert!(out.contains("<li>Item 3</li>"), "nested li 3");
+    }
+
+    #[test]
+    fn get_element_by_id_content_with_append() {
+        let js = r#"
+            var app = document.getElementById('app');
+            app.innerHTML = '<p>App content</p>';
+            document.body.appendChild(app);
+        "#;
+        let out = render(js, true, None).unwrap();
+        assert!(out.contains("<p>App content</p>"), "getElementById + appendChild captured");
     }
 }

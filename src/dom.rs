@@ -1,8 +1,7 @@
 use html5ever::{
-    parse_document,
-    serialize::{serialize, SerializeOpts, TraversalScope},
+    ParseOpts, parse_document,
+    serialize::{SerializeOpts, TraversalScope, serialize},
     tendril::TendrilSink,
-    ParseOpts,
 };
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
 
@@ -26,8 +25,9 @@ impl Document {
         out
     }
 
-    /// Serialize the DOM to an HTML string, injecting `extra` just before </body>.
-    pub fn serialize_with_injection(&self, extra: &str) -> String {
+    /// Serialize the DOM, optionally replacing the body content with `body_html`
+    /// (from JS DOM mutations) and appending `extra` (from document.write).
+    pub fn serialize_with_body_and_injection(&self, body_html: &str, extra: &str) -> String {
         let mut bytes = Vec::new();
         serialize(
             &mut bytes,
@@ -41,6 +41,14 @@ impl Document {
 
         let mut html = String::from_utf8(bytes).expect("html5ever always outputs utf-8");
 
+        // Replace body content when JS rendered into the DOM.
+        if !body_html.is_empty() {
+            if let Some((start, end)) = body_content_range(&html) {
+                html.replace_range(start..end, body_html);
+            }
+        }
+
+        // Inject document.write() output just before </body>.
         if !extra.is_empty() {
             if let Some(pos) = html.rfind("</body>") {
                 html.insert_str(pos, extra);
@@ -51,6 +59,14 @@ impl Document {
 
         html
     }
+}
+
+/// Returns the byte range of the content inside `<body>...</body>`.
+fn body_content_range(html: &str) -> Option<(usize, usize)> {
+    let body_pos  = html.find("<body")?;
+    let tag_close = html[body_pos..].find('>')? + body_pos + 1;
+    let body_end  = html.rfind("</body>")?;
+    if body_end >= tag_close { Some((tag_close, body_end)) } else { None }
 }
 
 fn collect_scripts(handle: &Handle, out: &mut Vec<String>) {
