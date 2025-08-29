@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 ureq = "2"
+url = "2"
 boa_engine = "0.19"
 clap = { version = "4", features = ["derive"] }
 html5ever = "0.27"

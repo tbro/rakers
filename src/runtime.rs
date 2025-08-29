@@ -16,8 +16,20 @@ thread_local! {
 const BOOTSTRAP_TEMPLATE: &str = include_str!("bootstrap.js");
 
 // Script run after user scripts to read the JS DOM state back into Rust.
+// First flushes the collected timer/microtask queue (bounded to avoid infinite loops),
+// then reads the rendered body HTML.
 const READBACK_JS: &str = r#"
 (function() {
+    // Flush deferred callbacks (setTimeout / requestAnimationFrame / MessageChannel / queueMicrotask).
+    // Each flush pass can enqueue more callbacks; cap total iterations to avoid infinite loops.
+    var maxPasses = 64;
+    for (var pass = 0; pass < maxPasses && _r_timers.length > 0; pass++) {
+        var batch = _r_timers.splice(0, _r_timers.length);
+        for (var i = 0; i < batch.length; i++) {
+            try { batch[i](); } catch(e) {}
+        }
+    }
+
     var body = document.body && document.body.innerHTML;
     if (body) return body;
     // If scripts wrote into registry elements but never appended them to body,
@@ -55,6 +67,8 @@ impl JsRuntime {
     /// Script errors are non-fatal: logged to stderr, execution continues.
     pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
         let mut ctx = Context::default();
+        ctx.runtime_limits_mut().set_stack_size_limit(65536);
+        ctx.runtime_limits_mut().set_recursion_limit(65536);
         setup_document(&mut ctx)?;
         setup_console(&mut ctx)?;
 

@@ -1133,6 +1133,7 @@ dependencies = [
  "html5ever",
  "markup5ever_rcdom",
  "ureq",
+ "url",
 ]
 
 [[package]]

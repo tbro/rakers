@@ -5,6 +5,11 @@ use html5ever::{
 };
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
 
+pub enum ScriptSource {
+    Inline(String),
+    External(String), // value of src="..." (may be relative)
+}
+
 pub struct Document {
     dom: RcDom,
 }
@@ -18,8 +23,9 @@ pub fn parse(html: &str) -> Document {
 }
 
 impl Document {
-    /// Walk the DOM tree and collect the text content of every <script> element.
-    pub fn extract_scripts(&self) -> Vec<String> {
+    /// Walk the DOM tree and return every script in document order.
+    /// Inline scripts carry their text; external scripts carry the src value.
+    pub fn extract_scripts(&self) -> Vec<ScriptSource> {
         let mut out = Vec::new();
         collect_scripts(&self.dom.document, &mut out);
         out
@@ -69,17 +75,41 @@ fn body_content_range(html: &str) -> Option<(usize, usize)> {
     if body_end >= tag_close { Some((tag_close, body_end)) } else { None }
 }
 
-fn collect_scripts(handle: &Handle, out: &mut Vec<String>) {
-    if let NodeData::Element { ref name, .. } = handle.data {
+fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
+    if let NodeData::Element { ref name, ref attrs, .. } = handle.data {
         if &name.local == "script" {
-            let mut content = String::new();
-            for child in handle.children.borrow().iter() {
-                if let NodeData::Text { ref contents } = child.data {
-                    content.push_str(&contents.borrow());
+            let attrs = attrs.borrow();
+
+            // Skip non-JS types (JSON, templates, etc.).
+            // We do execute type="module" — it'll fail gracefully if boa can't parse it.
+            let type_val = attrs.iter()
+                .find(|a| &a.name.local == "type")
+                .map(|a| a.value.to_string());
+            if let Some(t) = type_val {
+                match t.trim().to_ascii_lowercase().as_str() {
+                    "" | "text/javascript" | "application/javascript" | "module" => {}
+                    _ => return, // template, json, etc.
                 }
             }
-            if !content.trim().is_empty() {
-                out.push(content);
+
+            let src = attrs.iter()
+                .find(|a| &a.name.local == "src")
+                .map(|a| a.value.trim().to_string());
+
+            if let Some(src) = src {
+                if !src.is_empty() {
+                    out.push(ScriptSource::External(src));
+                }
+            } else {
+                let mut content = String::new();
+                for child in handle.children.borrow().iter() {
+                    if let NodeData::Text { ref contents } = child.data {
+                        content.push_str(&contents.borrow());
+                    }
+                }
+                if !content.trim().is_empty() {
+                    out.push(ScriptSource::Inline(content));
+                }
             }
             // Don't recurse into script children.
             return;

@@ -3,6 +3,14 @@
 
 var window = globalThis;
 var self   = window;
+var global = window;
+
+// Node.js-style globals that bundlers (webpack/vite) reference at runtime.
+var process = {
+    env: { NODE_ENV: 'production' },
+    browser: true, version: 'v18.0.0', versions: {},
+    nextTick: function(fn) {}
+};
 
 // ─── Element factory ────────────────────────────────────────────────────────
 
@@ -223,13 +231,15 @@ window.sessionStorage = {
     clear:      function()  { this._s = {}; },
     key:        function()  { return null; }
 };
-window.setTimeout            = function(fn, delay) { return 0; };
+// Collect deferred callbacks so we can flush them after scripts finish.
+var _r_timers = [];
+window.setTimeout            = function(fn, delay) { if (typeof fn === 'function') _r_timers.push(fn); return _r_timers.length; };
 window.clearTimeout          = function(id) {};
 window.setInterval           = function(fn, delay) { return 0; };
 window.clearInterval         = function(id) {};
-window.requestAnimationFrame = function(fn) { return 0; };
+window.requestAnimationFrame = function(fn) { if (typeof fn === 'function') _r_timers.push(fn); return _r_timers.length; };
 window.cancelAnimationFrame  = function(id) {};
-window.queueMicrotask        = function(fn) {};
+window.queueMicrotask        = function(fn) { if (typeof fn === 'function') _r_timers.push(fn); };
 window.alert   = function(msg) {};
 window.confirm = function(msg) { return false; };
 window.prompt  = function(msg, def) { return null; };
@@ -276,6 +286,15 @@ window.ErrorEvent   = window.Event;
 window.MessageEvent = function(type, init) { this.type=type; this.data=init&&init.data||null; };
 window.PointerEvent = window.Event;
 window.WheelEvent   = window.Event;
+window.MessageChannel = function() {
+    var self = this;
+    this.port1 = { onmessage: null, postMessage: function(msg) {
+        if (typeof self.port2.onmessage === 'function') _r_timers.push(function(){ self.port2.onmessage({data:msg}); });
+    }};
+    this.port2 = { onmessage: null, postMessage: function(msg) {
+        if (typeof self.port1.onmessage === 'function') _r_timers.push(function(){ self.port1.onmessage({data:msg}); });
+    }};
+};
 window.AbortController = function() { this.signal={aborted:false,addEventListener:function(){}}; this.abort=function(){}; };
 window.AbortSignal  = {timeout:function(){return {aborted:false,addEventListener:function(){}};}};
 window.TextEncoder  = function() { this.encode=function(s){return new Uint8Array(0);}; };

@@ -61,6 +61,39 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
+    if src.starts_with("data:") || src.starts_with("blob:") {
+        return None;
+    }
+    if src.starts_with("http://") || src.starts_with("https://") {
+        return Some(src.to_owned());
+    }
+    if src.starts_with("//") {
+        return Some(format!("https:{src}"));
+    }
+    let base_url = url::Url::parse(base?).ok()?;
+    let resolved = base_url.join(src).ok()?;
+    Some(resolved.to_string())
+}
+
+fn fetch_script(url: &str) -> Option<String> {
+    match ureq::get(url).call() {
+        Ok(r) => r.into_string().ok(),
+        Err(e) => { eprintln!("[fetch error] {url}: {e}"); None }
+    }
+}
+
+fn load_scripts(sources: Vec<dom::ScriptSource>, page_url: Option<&str>) -> Vec<String> {
+    sources.into_iter().filter_map(|s| match s {
+        dom::ScriptSource::Inline(code) => Some(code),
+        dom::ScriptSource::External(src) => {
+            let url = resolve_url(&src, page_url)?;
+            eprintln!("[fetch] {url}");
+            fetch_script(&url)
+        }
+    }).collect()
+}
+
 fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
     let html = if is_js {
         format!(
@@ -71,7 +104,7 @@ fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<St
     };
 
     let doc = dom::parse(&html);
-    let scripts = doc.extract_scripts();
+    let scripts = load_scripts(doc.extract_scripts(), page_url);
 
     let rt = runtime::JsRuntime::new();
     rt.execute(&scripts, page_url)?;
@@ -184,6 +217,20 @@ mod tests {
         "#;
         let out = render(js, true, None).unwrap();
         assert!(out.contains("<p>test</p>"), "createElement stub works");
+    }
+
+    #[test]
+    fn settimeout_callback_flushed() {
+        let html = concat!(
+            "<!DOCTYPE html><html><body>",
+            r#"<div id="app"></div>"#,
+            "<script>setTimeout(function() {",
+            r#"document.getElementById('app').innerHTML = '<h1>Rendered via setTimeout</h1>';"#,
+            "}, 0);</script>",
+            "</body></html>"
+        );
+        let out = render(html, false, None).unwrap();
+        assert!(out.contains("<h1>Rendered via setTimeout</h1>"), "setTimeout callback flushed before readback");
     }
 
     // ── DOM-mutation rendering (the main improvement) ────────────────────────
