@@ -3,11 +3,17 @@ name = "rakers"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["boa"]
+boa = ["dep:boa_engine"]
+rquickjs = ["dep:rquickjs"]
+
 [dependencies]
 anyhow = "1"
 ureq = "2"
 url = "2"
-boa_engine = "0.19"
 clap = { version = "4", features = ["derive"] }
 html5ever = "0.27"
 markup5ever_rcdom = "0.3"
+boa_engine = { version = "0.19", optional = true }
+rquickjs = { version = "0.8", features = ["full"], optional = true }
