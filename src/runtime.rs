@@ -16,7 +16,9 @@ const READBACK_JS: &str = r#"
     for (var pass = 0; pass < maxPasses && _r_timers.length > 0; pass++) {
         var batch = _r_timers.splice(0, _r_timers.length);
         for (var i = 0; i < batch.length; i++) {
-            try { batch[i](); } catch(e) {}
+            try { batch[i](); } catch(e) {
+                if (typeof console !== 'undefined') console.error('[rakers timer error]', e && (e.message || String(e)));
+            }
         }
     }
 
@@ -205,8 +207,12 @@ mod quickjs_rt {
                     .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
 
                 for script in scripts {
-                    if let Err(e) = ctx.eval::<Value, _>(script.as_str()) {
-                        eprintln!("[js error] {:?}", e);
+                    if let Err(_) = ctx.eval::<Value, _>(script.as_str()) {
+                        let exc = ctx.catch();
+                        let msg = exc.as_exception()
+                            .and_then(|e| e.message())
+                            .unwrap_or_else(|| "unknown exception".into());
+                        eprintln!("[js error] {}", msg);
                     }
                 }
 

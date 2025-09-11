@@ -12,6 +12,39 @@ var process = {
     nextTick: function(fn) {}
 };
 
+// ─── URL parser (used by element setAttribute and window.URL) ───────────────
+
+function _r_parse_url(href, base) {
+    var s = String(href || '');
+    // Resolve relative URL against base
+    if (base && !/^[a-zA-Z][a-zA-Z0-9+\-.]*:/.test(s)) {
+        var b = _r_parse_url(base);
+        if (s.charAt(0) === '/') {
+            s = b.protocol + '//' + b.host + s;
+        } else if (s.charAt(0) === '#') {
+            s = b.protocol + '//' + b.host + b.pathname + s;
+        } else {
+            var dir = b.pathname.replace(/\/[^\/]*$/, '/');
+            s = b.protocol + '//' + b.host + dir + s;
+        }
+    }
+    var m = s.match(/^([a-zA-Z][a-zA-Z0-9+\-.]*:)\/\/([^\/\?#]*)([^\?#]*)(\?[^#]*)?(#.*)?$/);
+    if (m) {
+        var protocol = m[1] || '';
+        var host     = m[2] || '';
+        var hostname = host.replace(/:\d+$/, '');
+        var port     = (host.match(/:(\d+)$/) || ['', ''])[1];
+        var pathname = m[3] || '/';
+        var search   = m[4] || '';
+        var hash     = m[5] || '';
+        return { href: s, protocol: protocol, host: host, hostname: hostname,
+                 port: port, pathname: pathname, search: search, hash: hash,
+                 origin: protocol + '//' + host };
+    }
+    return { href: s, protocol: '', host: '', hostname: '', port: '',
+             pathname: s || '/', search: '', hash: '', origin: '' };
+}
+
 // ─── Element factory ────────────────────────────────────────────────────────
 
 function _r_el(tag) {
@@ -20,6 +53,11 @@ function _r_el(tag) {
         tagName: tag, nodeType: 1,
         id: '', className: '', name: '', type: '', value: '',
         href: '', src: '', alt: '', placeholder: '',
+        // URL-derived properties (populated when href is set on anchor/link elements)
+        protocol: '', host: '', hostname: '', port: '', pathname: '',
+        search: '', hash: '', origin: '',
+        // ownerDocument — lazily returns the global document so React's event setup doesn't crash
+        get ownerDocument() { return typeof document !== 'undefined' ? document : null; },
         style: {}, dataset: {},
         innerHTML: '', textContent: '',
         parentNode: null, parentElement: null,
@@ -38,17 +76,26 @@ function _r_el(tag) {
             v = String(v);
             if      (n === 'id')    this.id    = v;
             else if (n === 'class') this.className = v;
-            else if (n === 'href')  this.href  = v;
+            else if (n === 'href') {
+                this.href = v;
+                var u = _r_parse_url(v, window.location && window.location.href);
+                this.protocol = u.protocol; this.host     = u.host;
+                this.hostname = u.hostname; this.port     = u.port;
+                this.pathname = u.pathname; this.search   = u.search;
+                this.hash     = u.hash;     this.origin   = u.origin;
+            }
             else if (n === 'src')   this.src   = v;
             else if (n === 'type')  this.type  = v;
             else if (n === 'value') this.value = v;
             else if (n === 'name')  this.name  = v;
         },
         getAttribute: function(n) {
-            if (n === 'id')    return this.id    || null;
-            if (n === 'class') return this.className || null;
-            if (n === 'href')  return this.href  || null;
-            if (n === 'src')   return this.src   || null;
+            if (n === 'id')       return this.id        || null;
+            if (n === 'class')    return this.className || null;
+            if (n === 'href')     return this.href      || null;
+            if (n === 'src')      return this.src       || null;
+            if (n === 'pathname') return this.pathname  || null;
+            if (n === 'hostname') return this.hostname  || null;
             return null;
         },
         hasAttribute:    function(n) { return !!this.getAttribute(n); },
@@ -149,6 +196,7 @@ document.createRange      = function() {
     };
 };
 document.createEvent = function() { return {initEvent:function(){}, type:'', bubbles:false, cancelable:false}; };
+document.nodeType = 9; // DOCUMENT_NODE — needed by React's event-listener setup
 
 document.getElementById = function(id) {
     if (!_r_reg[id]) { var e = _r_el('div'); e.id = id; _r_reg[id] = e; }
@@ -184,6 +232,8 @@ document.hasFocus            = function() { return false; };
 document.getSelection        = function() { return null; };
 document.elementFromPoint    = function() { return null; };
 document.elementsFromPoint   = function() { return []; };
+document.activeElement       = null;
+document.defaultView         = window;
 
 // ─── window ──────────────────────────────────────────────────────────────────
 
@@ -260,7 +310,14 @@ window.FormData = function() {
     this.get=function(){return null;}; this.has=function(){return false;};
     this.set=function(){};
 };
-window.URL = function(href, base) { this.href=String(href); this.toString=function(){return this.href;}; };
+window.URL = function(href, base) {
+    var u = _r_parse_url(String(href), base ? String(base) : (window.location && window.location.href));
+    this.href = u.href; this.protocol = u.protocol; this.host = u.host;
+    this.hostname = u.hostname; this.port = u.port; this.pathname = u.pathname;
+    this.search = u.search; this.hash = u.hash; this.origin = u.origin;
+    this.toString = function() { return this.href; };
+    this.searchParams = { get: function() { return null; }, set: function() {}, has: function() { return false; } };
+};
 window.URL.createObjectURL = function() { return ''; };
 window.URL.revokeObjectURL = function() {};
 window.Blob       = function(parts, opts) { this.size=0; this.type=(opts&&opts.type)||''; };
@@ -295,18 +352,38 @@ window.MessageChannel = function() {
         if (typeof self.port1.onmessage === 'function') _r_timers.push(function(){ self.port1.onmessage({data:msg}); });
     }};
 };
+window.addEventListener    = function() {};
+window.removeEventListener = function() {};
+window.dispatchEvent       = function() { return true; };
+// Analytics stubs — prevents crashes when GA/GTM scripts fail to load
+window.dataLayer = [];
+window.gtag = function() { window.dataLayer.push(arguments); };
 window.AbortController = function() { this.signal={aborted:false,addEventListener:function(){}}; this.abort=function(){}; };
 window.AbortSignal  = {timeout:function(){return {aborted:false,addEventListener:function(){}};}};
 window.TextEncoder  = function() { this.encode=function(s){return new Uint8Array(0);}; };
 window.TextDecoder  = function() { this.decode=function(b){return '';}; };
 window.crypto       = {getRandomValues:function(a){return a;}, subtle:{}, randomUUID:function(){return '00000000-0000-0000-0000-000000000000';}};
 window.CSS          = {supports:function(){return false;}, escape:function(s){return s;}};
-window.HTMLElement  = function() {};
+window.HTMLElement         = function() {};
+window.HTMLIFrameElement   = function() {};
+window.HTMLInputElement    = function() {};
+window.HTMLTextAreaElement = function() {};
+window.HTMLSelectElement   = function() {};
+window.HTMLButtonElement   = function() {};
+window.HTMLAnchorElement   = function() {};
+window.HTMLImageElement    = function() {};
+window.HTMLFormElement     = function() {};
+window.HTMLScriptElement   = function() {};
+window.HTMLLinkElement     = function() {};
+window.HTMLDivElement      = function() {};
+window.HTMLSpanElement     = function() {};
 window.Element      = function() {};
 window.Node         = function() {};
 window.EventTarget  = function() {};
 window.Document     = function() {};
+window.DocumentFragment = function() {};
 window.Window       = function() {};
+window.ShadowRoot   = function() {};
 window.devicePixelRatio = 1;
 window.innerWidth  = 1920; window.innerHeight = 1080;
 window.outerWidth  = 1920; window.outerHeight = 1080;
