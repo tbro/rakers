@@ -20,15 +20,54 @@ struct Cli {
     /// Write output to FILE instead of stdout
     #[arg(short, long, value_name = "FILE")]
     output: Option<String>,
+
+    /// Set the User-Agent header for all HTTP requests.
+    /// Use a non-browser UA (e.g. "curl/8.0") to bypass Cloudflare Rocket Loader
+    /// and other UA-gated server-side transformations.
+    #[arg(short = 'A', long, value_name = "UA")]
+    user_agent: Option<String>,
+
+    /// Add a custom HTTP request header (repeatable). Format: "Name: Value".
+    /// Example: -H "CF-No-Mirage: 1"
+    #[arg(short = 'H', long = "header", value_name = "HEADER")]
+    headers: Vec<String>,
 }
 
 fn is_url(s: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
-fn fetch(input: &str) -> anyhow::Result<(String, bool)> {
+struct HttpConfig {
+    user_agent: Option<String>,
+    headers: Vec<(String, String)>,
+}
+
+impl HttpConfig {
+    fn from_cli(cli: &Cli) -> anyhow::Result<Self> {
+        let mut headers = Vec::new();
+        for raw in &cli.headers {
+            let (name, value) = raw.split_once(':')
+                .ok_or_else(|| anyhow::anyhow!("invalid header {:?}: expected \"Name: Value\"", raw))?;
+            headers.push((name.trim().to_owned(), value.trim().to_owned()));
+        }
+        Ok(HttpConfig { user_agent: cli.user_agent.clone(), headers })
+    }
+
+    fn apply(&self, req: ureq::Request) -> ureq::Request {
+        let mut req = req;
+        if let Some(ua) = &self.user_agent {
+            req = req.set("User-Agent", ua);
+        }
+        for (name, value) in &self.headers {
+            req = req.set(name, value);
+        }
+        req
+    }
+}
+
+fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
     if is_url(input) {
-        let body = ureq::get(input).call()?.into_string()?;
+        let body = cfg.apply(ureq::get(input)).call()?.into_string()?;
         Ok((body, false))
     } else {
         let content = fs::read_to_string(input)?;
@@ -39,11 +78,12 @@ fn fetch(input: &str) -> anyhow::Result<(String, bool)> {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let cfg = HttpConfig::from_cli(&cli)?;
 
     let page_url = cli.input.as_deref().filter(|s| is_url(s));
 
     let (input, is_js) = match &cli.input {
-        Some(src) => fetch(src)?,
+        Some(src) => fetch(src, &cfg)?,
         None => {
             let mut s = String::new();
             io::stdin().read_to_string(&mut s)?;
@@ -51,7 +91,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let result = render(&input, is_js, page_url)?;
+    let result = render(&input, is_js, page_url, &cfg)?;
 
     match &cli.output {
         Some(path) => fs::write(path, &result)?,
@@ -76,25 +116,25 @@ fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
     Some(resolved.to_string())
 }
 
-fn fetch_script(url: &str) -> Option<String> {
-    match ureq::get(url).call() {
+fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
+    match cfg.apply(ureq::get(url)).call() {
         Ok(r) => r.into_string().ok(),
         Err(e) => { eprintln!("[fetch error] {url}: {e}"); None }
     }
 }
 
-fn load_scripts(sources: Vec<dom::ScriptSource>, page_url: Option<&str>) -> Vec<String> {
+fn load_scripts(sources: Vec<dom::ScriptSource>, page_url: Option<&str>, cfg: &HttpConfig) -> Vec<String> {
     sources.into_iter().filter_map(|s| match s {
         dom::ScriptSource::Inline(code) => Some(code),
         dom::ScriptSource::External(src) => {
             let url = resolve_url(&src, page_url)?;
             eprintln!("[fetch] {url}");
-            fetch_script(&url)
+            fetch_script(&url, cfg)
         }
     }).collect()
 }
 
-fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
+fn render(input: &str, is_js: bool, page_url: Option<&str>, cfg: &HttpConfig) -> anyhow::Result<String> {
     let html = if is_js {
         format!(
             "<!DOCTYPE html><html><head></head><body><script>{input}</script></body></html>"
@@ -104,7 +144,7 @@ fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<St
     };
 
     let doc = dom::parse(&html);
-    let scripts = load_scripts(doc.extract_scripts(), page_url);
+    let scripts = load_scripts(doc.extract_scripts(), page_url, cfg);
 
     let rt = runtime::JsRuntime::new();
     rt.execute(&scripts, page_url)?;
@@ -119,6 +159,11 @@ fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn render(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
+        let cfg = HttpConfig { user_agent: None, headers: vec![] };
+        super::render(input, is_js, page_url, &cfg)
+    }
 
     #[test]
     fn html_inline_script_document_write() {
