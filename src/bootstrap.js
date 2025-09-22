@@ -358,6 +358,29 @@ window.dispatchEvent       = function() { return true; };
 // Analytics stubs — prevents crashes when GA/GTM scripts fail to load
 window.dataLayer = [];
 window.gtag = function() { window.dataLayer.push(arguments); };
+window.btoa = function(str) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    str = String(str); var out = '';
+    for (var i = 0; i < str.length; i += 3) {
+        var b0=str.charCodeAt(i), b1=i+1<str.length?str.charCodeAt(i+1):0, b2=i+2<str.length?str.charCodeAt(i+2):0;
+        out += chars[b0>>2] + chars[((b0&3)<<4)|(b1>>4)];
+        out += i+1<str.length ? chars[((b1&15)<<2)|(b2>>6)] : '=';
+        out += i+2<str.length ? chars[b2&63] : '=';
+    }
+    return out;
+};
+window.atob = function(str) {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    str = String(str).replace(/[\s=]+$/g, ''); var out = '';
+    for (var i = 0; i < str.length; i += 4) {
+        var c0=chars.indexOf(str[i]), c1=chars.indexOf(str[i+1]);
+        var c2=i+2<str.length?chars.indexOf(str[i+2]):64, c3=i+3<str.length?chars.indexOf(str[i+3]):64;
+        out += String.fromCharCode((c0<<2)|(c1>>4));
+        if (c2!==64) out += String.fromCharCode(((c1&15)<<4)|(c2>>2));
+        if (c3!==64) out += String.fromCharCode(((c2&3)<<6)|c3);
+    }
+    return out;
+};
 window.AbortController = function() { this.signal={aborted:false,addEventListener:function(){}}; this.abort=function(){}; };
 window.AbortSignal  = {timeout:function(){return {aborted:false,addEventListener:function(){}};}};
 window.TextEncoder  = function() { this.encode=function(s){return new Uint8Array(0);}; };
