@@ -86,10 +86,13 @@ fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
                 .find(|a| &a.name.local == "type")
                 .map(|a| a.value.to_string());
             if let Some(t) = type_val {
-                match t.trim().to_ascii_lowercase().as_str() {
-                    "" | "text/javascript" | "application/javascript" | "module" => {}
-                    _ => return, // template, json, etc.
-                }
+                let t = t.trim().to_ascii_lowercase();
+                let executable = match t.as_str() {
+                    "" | "text/javascript" | "application/javascript" | "module" | "text/rocketscript" => true,
+                    // Modern Cloudflare Rocket Loader rewrites type to "<hex-hash>-text/javascript"
+                    t => t.ends_with("-text/javascript") || t.ends_with("-application/javascript"),
+                };
+                if !executable { return; }
             }
 
             let src = attrs.iter()
