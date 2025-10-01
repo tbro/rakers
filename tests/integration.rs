@@ -7,7 +7,10 @@ use rakers::{render_url, HttpConfig};
 /// babylonbee.com uses Cloudflare Rocket Loader: script types are rewritten to
 /// "<hex-hash>-text/javascript". Verifies that rakers executes those scripts and
 /// produces a fully-populated page rather than a skeleton.
+///
+/// Requires rquickjs — boa overflows the native stack on real-world JS bundles.
 #[test]
+#[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
 fn babylonbee_rocket_loader_renders_articles() {
     let out = render_url("https://babylonbee.com", &HttpConfig::default())
         .expect("render_url failed");
@@ -30,7 +33,10 @@ fn babylonbee_rocket_loader_renders_articles() {
 /// jsbench.me is a React SPA: the server returns an almost-empty HTML shell and
 /// React renders the full UI client-side. Verifies that rakers executes the React
 /// bundle and serializes the rendered DOM.
+///
+/// Requires rquickjs — boa overflows the native stack on real-world JS bundles.
 #[test]
+#[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
 fn jsbench_react_spa_renders_ui() {
     let out = render_url("https://jsbench.me", &HttpConfig::default())
         .expect("render_url failed");
