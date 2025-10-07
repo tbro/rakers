@@ -51,14 +51,46 @@ Script errors are non-fatal — execution continues with the next script.
 
 ## JS engine choice
 
-| Feature | boa (default) | rquickjs |
-|---------|---------------|----------|
-| Dependencies | Pure Rust | C compiler required |
-| ES standard | ES2021 (partial) | ES2023 |
-| Real-world bundles | Limited | Good |
-| React/Vue SPAs | May hit stack limits | Works |
+rakers supports two JS engines selectable at compile time.
 
-Use `--no-default-features --features rquickjs` to build with QuickJS.
+| | boa (default) | rquickjs |
+|--|---------------|----------|
+| **Build deps** | Pure Rust, no C compiler | Requires a C compiler |
+| **ES standard** | ES2021 (partial) | ES2023 |
+| **Real-world bundles** | Limited — may stack-overflow on large bundles | Good |
+| **React / Vue SPAs** | Often hits stack limits | Works |
+| **When to use** | Simple pages, CI without C toolchain | Real-world sites |
+
+### Building
+
+```sh
+# boa (default — pure Rust, no extra toolchain needed)
+cargo build
+cargo install --path .
+
+# QuickJS via rquickjs (recommended for real-world sites)
+cargo build --no-default-features --features rquickjs
+cargo install --path . --no-default-features --features rquickjs
+```
+
+Only one engine can be enabled at a time; the build will fail with a clear
+error if both or neither are selected.
+
+### Running tests
+
+Unit tests run with either engine:
+
+```sh
+cargo test                                            # boa
+cargo test --no-default-features --features rquickjs  # rquickjs
+```
+
+Integration tests that fetch real SPAs require rquickjs (boa overflows the
+native stack on large React/Rocket Loader bundles):
+
+```sh
+cargo test --test integration --no-default-features --features rquickjs
+```
 
 ## Browser environment
 
