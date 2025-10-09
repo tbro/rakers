@@ -1,15 +1,10 @@
 mod dom;
 mod runtime;
 
+#[derive(Default)]
 pub struct HttpConfig {
     pub user_agent: Option<String>,
     pub headers: Vec<(String, String)>,
-}
-
-impl Default for HttpConfig {
-    fn default() -> Self {
-        HttpConfig { user_agent: None, headers: vec![] }
-    }
 }
 
 impl HttpConfig {
@@ -43,22 +38,37 @@ fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
 fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
     match cfg.apply(ureq::get(url)).call() {
         Ok(r) => r.into_string().ok(),
-        Err(e) => { eprintln!("[fetch error] {url}: {e}"); None }
+        Err(e) => {
+            eprintln!("[fetch error] {url}: {e}");
+            None
+        }
     }
 }
 
-fn load_scripts(sources: Vec<dom::ScriptSource>, page_url: Option<&str>, cfg: &HttpConfig) -> Vec<String> {
-    sources.into_iter().filter_map(|s| match s {
-        dom::ScriptSource::Inline(code) => Some(code),
-        dom::ScriptSource::External(src) => {
-            let url = resolve_url(&src, page_url)?;
-            eprintln!("[fetch] {url}");
-            fetch_script(&url, cfg)
-        }
-    }).collect()
+fn load_scripts(
+    sources: Vec<dom::ScriptSource>,
+    page_url: Option<&str>,
+    cfg: &HttpConfig,
+) -> Vec<String> {
+    sources
+        .into_iter()
+        .filter_map(|s| match s {
+            dom::ScriptSource::Inline(code) => Some(code),
+            dom::ScriptSource::External(src) => {
+                let url = resolve_url(&src, page_url)?;
+                eprintln!("[fetch] {url}");
+                fetch_script(&url, cfg)
+            }
+        })
+        .collect()
 }
 
-pub fn render(input: &str, is_js: bool, page_url: Option<&str>, cfg: &HttpConfig) -> anyhow::Result<String> {
+pub fn render(
+    input: &str,
+    is_js: bool,
+    page_url: Option<&str>,
+    cfg: &HttpConfig,
+) -> anyhow::Result<String> {
     let html = if is_js {
         format!("<!DOCTYPE html><html><head></head><body><script>{input}</script></body></html>")
     } else {
@@ -102,15 +112,21 @@ mod tests {
         );
         let out = render_simple(input, false, None).unwrap();
         assert!(out.contains("<h1>Before</h1>"), "static content preserved");
-        assert!(out.contains("<p>Hello from JS!</p>"), "document.write injected");
+        assert!(
+            out.contains("<p>Hello from JS!</p>"),
+            "document.write injected"
+        );
     }
 
     #[test]
     fn js_file_mode_loop() {
         let js = concat!(
-            r#"document.write("<ul>");"#, "\n",
-            r#"for (let i = 1; i <= 3; i++) { document.write("<li>Item " + i + "</li>"); }"#, "\n",
-            r#"document.write("</ul>");"#, "\n",
+            r#"document.write("<ul>");"#,
+            "\n",
+            r#"for (let i = 1; i <= 3; i++) { document.write("<li>Item " + i + "</li>"); }"#,
+            "\n",
+            r#"document.write("</ul>");"#,
+            "\n",
             r#"console.log("rendered", 3, "items");"#,
         );
         let out = render_simple(js, true, None).unwrap();
@@ -140,7 +156,10 @@ mod tests {
     fn window_aliases_global() {
         let js = r#"window.document.write("<p>via window</p>");"#;
         let out = render_simple(js, true, None).unwrap();
-        assert!(out.contains("<p>via window</p>"), "window.document.write works");
+        assert!(
+            out.contains("<p>via window</p>"),
+            "window.document.write works"
+        );
     }
 
     #[test]
@@ -152,14 +171,20 @@ mod tests {
             "</body></html>"
         );
         let out = render_simple(html, false, None).unwrap();
-        assert!(out.contains("<p>survived</p>"), "rendering continues after script error");
+        assert!(
+            out.contains("<p>survived</p>"),
+            "rendering continues after script error"
+        );
     }
 
     #[test]
     fn location_href_reflects_page_url() {
         let js = r#"document.write(window.location.href);"#;
         let out = render_simple(js, true, Some("https://example.com/page")).unwrap();
-        assert!(out.contains("https://example.com/page"), "location.href set from page_url");
+        assert!(
+            out.contains("https://example.com/page"),
+            "location.href set from page_url"
+        );
     }
 
     #[test]
@@ -197,14 +222,20 @@ mod tests {
             "</body></html>"
         );
         let out = render_simple(html, false, None).unwrap();
-        assert!(out.contains("<h1>Rendered via setTimeout</h1>"), "setTimeout callback flushed before readback");
+        assert!(
+            out.contains("<h1>Rendered via setTimeout</h1>"),
+            "setTimeout callback flushed before readback"
+        );
     }
 
     #[test]
     fn body_inner_html_set_directly() {
         let js = r#"document.body.innerHTML = '<h1>Set directly</h1>';"#;
         let out = render_simple(js, true, None).unwrap();
-        assert!(out.contains("<h1>Set directly</h1>"), "body.innerHTML = '...' captured");
+        assert!(
+            out.contains("<h1>Set directly</h1>"),
+            "body.innerHTML = '...' captured"
+        );
     }
 
     #[test]
@@ -215,7 +246,10 @@ mod tests {
             document.body.appendChild(h1);
         "#;
         let out = render_simple(js, true, None).unwrap();
-        assert!(out.contains("<h1>Appended</h1>"), "appendChild serialized into output");
+        assert!(
+            out.contains("<h1>Appended</h1>"),
+            "appendChild serialized into output"
+        );
     }
 
     #[test]
@@ -242,6 +276,9 @@ mod tests {
             document.body.appendChild(app);
         "#;
         let out = render_simple(js, true, None).unwrap();
-        assert!(out.contains("<p>App content</p>"), "getElementById + appendChild captured");
+        assert!(
+            out.contains("<p>App content</p>"),
+            "getElementById + appendChild captured"
+        );
     }
 }

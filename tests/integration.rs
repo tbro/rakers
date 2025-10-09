@@ -2,7 +2,7 @@
 /// These tests require network access. Run with:
 ///   cargo test --test integration                         (boa engine)
 ///   cargo test --test integration --no-default-features --features rquickjs
-use rakers::{render, HttpConfig};
+use rakers::{HttpConfig, render};
 
 fn fetch(url: &str) -> String {
     ureq::get(url).call().unwrap().into_string().unwrap()
@@ -18,13 +18,20 @@ fn fetch(url: &str) -> String {
 #[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
 fn jsbench_react_spa_renders_ui() {
     let raw = fetch("https://jsbench.me");
-    let out = render(&raw, false, Some("https://jsbench.me"), &HttpConfig::default()).unwrap();
+    let out = render(
+        &raw,
+        false,
+        Some("https://jsbench.me"),
+        &HttpConfig::default(),
+    )
+    .unwrap();
 
     // Skeleton is tiny; rendered output must be much larger.
     assert!(
         out.len() > raw.len() * 2,
         "rendered output ({} bytes) should be >2× raw skeleton ({} bytes) — React bundle may not have run",
-        out.len(), raw.len()
+        out.len(),
+        raw.len()
     );
 
     // "Run" control is absent in the skeleton but rendered by React.
@@ -49,7 +56,13 @@ fn jsbench_react_spa_renders_ui() {
 #[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
 fn babylonbee_rocket_loader_pipeline_intact() {
     let raw = fetch("https://babylonbee.com");
-    let out = render(&raw, false, Some("https://babylonbee.com"), &HttpConfig::default()).unwrap();
+    let out = render(
+        &raw,
+        false,
+        Some("https://babylonbee.com"),
+        &HttpConfig::default(),
+    )
+    .unwrap();
 
     let raw_articles = raw.matches("<article").count();
     let out_articles = out.matches("<article").count();
@@ -61,7 +74,8 @@ fn babylonbee_rocket_loader_pipeline_intact() {
     assert!(
         out_articles >= raw_articles,
         "rendered output has fewer <article> elements ({}) than raw HTML ({}) — server-rendered content was lost",
-        out_articles, raw_articles
+        out_articles,
+        raw_articles
     );
 }
 

@@ -1,4 +1,4 @@
-use rakers::{render, HttpConfig};
+use rakers::{HttpConfig, render};
 
 use clap::Parser;
 use std::{
@@ -39,11 +39,15 @@ fn is_url(s: &str) -> bool {
 fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
     let mut headers = Vec::new();
     for raw in &cli.headers {
-        let (name, value) = raw.split_once(':')
+        let (name, value) = raw
+            .split_once(':')
             .ok_or_else(|| anyhow::anyhow!("invalid header {:?}: expected \"Name: Value\"", raw))?;
         headers.push((name.trim().to_owned(), value.trim().to_owned()));
     }
-    Ok(HttpConfig { user_agent: cli.user_agent.clone(), headers })
+    Ok(HttpConfig {
+        user_agent: cli.user_agent.clone(),
+        headers,
+    })
 }
 
 fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
@@ -52,7 +56,10 @@ fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
         Ok((body, false))
     } else {
         let content = fs::read_to_string(input)?;
-        let is_js = Path::new(input).extension().map(|e| e == "js").unwrap_or(false);
+        let is_js = Path::new(input)
+            .extension()
+            .map(|e| e == "js")
+            .unwrap_or(false);
         Ok((content, is_js))
     }
 }

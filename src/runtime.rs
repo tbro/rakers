@@ -50,14 +50,14 @@ mod boa_rt {
 
     use anyhow::anyhow;
     use boa_engine::{
-        js_string, object::ObjectInitializer, property::Attribute, Context, JsResult, JsValue,
-        NativeFunction, Source,
+        Context, JsResult, JsValue, NativeFunction, Source, js_string, object::ObjectInitializer,
+        property::Attribute,
     };
 
     thread_local! {
-        static WRITTEN:         RefCell<String>      = RefCell::new(String::new());
-        static LOGGED:          RefCell<Vec<String>> = RefCell::new(Vec::new());
-        static BODY_INNER_HTML: RefCell<String>      = RefCell::new(String::new());
+        static WRITTEN:         RefCell<String>      = const { RefCell::new(String::new()) };
+        static LOGGED:          RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
     }
 
     pub struct JsRuntime;
@@ -118,8 +118,16 @@ mod boa_rt {
 
     fn setup_document(ctx: &mut Context) -> anyhow::Result<()> {
         let mut init = ObjectInitializer::new(ctx);
-        init.function(NativeFunction::from_fn_ptr(doc_write),   js_string!("write"),   1);
-        init.function(NativeFunction::from_fn_ptr(doc_writeln), js_string!("writeln"), 1);
+        init.function(
+            NativeFunction::from_fn_ptr(doc_write),
+            js_string!("write"),
+            1,
+        );
+        init.function(
+            NativeFunction::from_fn_ptr(doc_writeln),
+            js_string!("writeln"),
+            1,
+        );
         let obj = init.build();
         ctx.register_global_property(js_string!("document"), obj, Attribute::all())
             .map_err(|e| anyhow!("{:?}", e))?;
@@ -128,9 +136,21 @@ mod boa_rt {
 
     fn setup_console(ctx: &mut Context) -> anyhow::Result<()> {
         let mut init = ObjectInitializer::new(ctx);
-        init.function(NativeFunction::from_fn_ptr(console_log), js_string!("log"),   0);
-        init.function(NativeFunction::from_fn_ptr(console_log), js_string!("warn"),  0);
-        init.function(NativeFunction::from_fn_ptr(console_log), js_string!("error"), 0);
+        init.function(
+            NativeFunction::from_fn_ptr(console_log),
+            js_string!("log"),
+            0,
+        );
+        init.function(
+            NativeFunction::from_fn_ptr(console_log),
+            js_string!("warn"),
+            0,
+        );
+        init.function(
+            NativeFunction::from_fn_ptr(console_log),
+            js_string!("error"),
+            0,
+        );
         let obj = init.build();
         ctx.register_global_property(js_string!("console"), obj, Attribute::all())
             .map_err(|e| anyhow!("{:?}", e))?;
@@ -145,7 +165,11 @@ mod boa_rt {
 
     fn doc_writeln(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
         let s = js_first_arg_to_string(args, ctx)?;
-        WRITTEN.with(|w| { let mut w = w.borrow_mut(); w.push_str(&s); w.push('\n'); });
+        WRITTEN.with(|w| {
+            let mut w = w.borrow_mut();
+            w.push_str(&s);
+            w.push('\n');
+        });
         Ok(JsValue::undefined())
     }
 
@@ -179,9 +203,9 @@ mod quickjs_rt {
     use rquickjs::{Context, Ctx, Function, Object, Runtime, Value};
 
     thread_local! {
-        static WRITTEN:         RefCell<String>      = RefCell::new(String::new());
-        static LOGGED:          RefCell<Vec<String>> = RefCell::new(Vec::new());
-        static BODY_INNER_HTML: RefCell<String>      = RefCell::new(String::new());
+        static WRITTEN:         RefCell<String>      = const { RefCell::new(String::new()) };
+        static LOGGED:          RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
     }
 
     pub struct JsRuntime;
@@ -207,9 +231,10 @@ mod quickjs_rt {
                     .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
 
                 for script in scripts {
-                    if let Err(_) = ctx.eval::<Value, _>(script.as_str()) {
+                    if ctx.eval::<Value, _>(script.as_str()).is_err() {
                         let exc = ctx.catch();
-                        let msg = exc.as_exception()
+                        let msg = exc
+                            .as_exception()
                             .and_then(|e| e.message())
                             .unwrap_or_else(|| "unknown exception".into());
                         eprintln!("[js error] {}", msg);
@@ -292,9 +317,15 @@ mod quickjs_rt {
         })
         .map_err(|e| anyhow!("{:?}", e))?;
 
-        console.set("log",   log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("warn",  log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("error", log_fn).map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("log", log_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("warn", log_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("error", log_fn)
+            .map_err(|e| anyhow!("{:?}", e))?;
 
         ctx.globals()
             .set("console", console)
