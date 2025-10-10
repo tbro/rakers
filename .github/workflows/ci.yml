@@ -52,5 +52,7 @@ jobs:
         run: cargo build ${{ matrix.flags }}
       - name: Unit tests
         run: cargo test --lib ${{ matrix.flags }}
+      - name: CLI tests
+        run: cargo test --test cli ${{ matrix.flags }}
       - name: Integration tests
         run: cargo test --test integration ${{ matrix.flags }}

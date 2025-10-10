@@ -18,3 +18,7 @@ markup5ever_rcdom = "0.3"
 boa_engine = { version = "0.19", optional = true }
 rquickjs = { version = "0.8", features = ["full"], optional = true }
 
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
