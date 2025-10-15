@@ -86,7 +86,10 @@ fn output_flag_writes_file_not_stdout() {
         .success()
         .stdout(predicate::str::is_empty());
     let content = std::fs::read_to_string(out.path()).unwrap();
-    assert!(content.contains("<p>written</p>"), "output file missing rendered content");
+    assert!(
+        content.contains("<p>written</p>"),
+        "output file missing rendered content"
+    );
 }
 
 #[test]
