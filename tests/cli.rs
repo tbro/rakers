@@ -92,6 +92,23 @@ fn output_flag_writes_file_not_stdout() {
     );
 }
 
+/// React SPA: server returns a ~2.7 KB skeleton; the bundle renders the full UI.
+/// Requires rquickjs — boa overflows the native stack on the React bundle.
+#[test]
+#[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
+fn jsbench_url_renders_react_ui() {
+    let output = cmd()
+        .arg("https://jsbench.me")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "rakers exited with non-zero status");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.len() > 4_000, "output too small ({} bytes) — React may not have run", stdout.len());
+    assert!(stdout.to_lowercase().contains("run"), "'run' absent — React UI may not have rendered");
+}
+
 #[test]
 fn invalid_header_format_fails() {
     cmd()
