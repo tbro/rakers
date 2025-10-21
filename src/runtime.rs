@@ -200,7 +200,7 @@ mod quickjs_rt {
     use std::cell::RefCell;
 
     use anyhow::anyhow;
-    use rquickjs::{Context, Ctx, Function, Object, Runtime, Value};
+    use rquickjs::{Context, Ctx, Function, Object, Runtime, Value, context::EvalOptions};
 
     thread_local! {
         static WRITTEN:         RefCell<String>      = const { RefCell::new(String::new()) };
@@ -226,12 +226,18 @@ mod quickjs_rt {
                 setup_document(ctx.clone())?;
                 setup_console(ctx.clone())?;
 
+                let sloppy = || {
+                    let mut o = EvalOptions::default();
+                    o.strict = false;
+                    o
+                };
+
                 let bootstrap = super::make_bootstrap(page_url);
-                ctx.eval::<Value, _>(bootstrap)
+                ctx.eval_with_options::<Value, _>(bootstrap, sloppy())
                     .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
 
                 for script in scripts {
-                    if ctx.eval::<Value, _>(script.as_str()).is_err() {
+                    if ctx.eval_with_options::<Value, _>(script.as_str(), sloppy()).is_err() {
                         let exc = ctx.catch();
                         let msg = exc
                             .as_exception()
@@ -242,7 +248,7 @@ mod quickjs_rt {
                 }
 
                 let body_html: String = ctx
-                    .eval::<Value, _>(super::READBACK_JS)
+                    .eval_with_options::<Value, _>(super::READBACK_JS, sloppy())
                     .ok()
                     .and_then(|v| v.as_string().and_then(|s| s.to_string().ok()))
                     .unwrap_or_default();

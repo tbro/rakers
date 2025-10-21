@@ -234,6 +234,14 @@ document.elementFromPoint    = function() { return null; };
 document.elementsFromPoint   = function() { return []; };
 document.activeElement       = null;
 document.defaultView         = window;
+// Stub for scripts that read document.currentScript.src (webpack publicPath) or
+// document.currentScript.parentElement (SvelteKit init).
+document.currentScript = {
+    src: '__HREF__', type: 'text/javascript', nodeType: 1, tagName: 'SCRIPT',
+    parentElement: document.head, parentNode: document.head,
+    getAttribute: function(n) { return n === 'src' ? this.src : n === 'type' ? this.type : null; },
+    setAttribute: function() {}, hasAttribute: function(n) { return n === 'src' || n === 'type'; }
+};
 
 // ─── window ──────────────────────────────────────────────────────────────────
 
@@ -316,7 +324,7 @@ window.URL = function(href, base) {
     this.hostname = u.hostname; this.port = u.port; this.pathname = u.pathname;
     this.search = u.search; this.hash = u.hash; this.origin = u.origin;
     this.toString = function() { return this.href; };
-    this.searchParams = { get: function() { return null; }, set: function() {}, has: function() { return false; } };
+    this.searchParams = new window.URLSearchParams(u.search);
 };
 window.URL.createObjectURL = function() { return ''; };
 window.URL.revokeObjectURL = function() {};
@@ -387,7 +395,33 @@ window.TextEncoder  = function() { this.encode=function(s){return new Uint8Array
 window.TextDecoder  = function() { this.decode=function(b){return '';}; };
 window.crypto       = {getRandomValues:function(a){return a;}, subtle:{}, randomUUID:function(){return '00000000-0000-0000-0000-000000000000';}};
 window.CSS          = {supports:function(){return false;}, escape:function(s){return s;}};
+window.DOMException = function(msg, name) { this.message=msg||''; this.name=name||'Error'; this.code=0; };
+window.DOMException.prototype = Object.create(Error.prototype);
+window.customElements = {
+    define: function() {}, get: function() { return undefined; },
+    upgrade: function() {}, whenDefined: function() { return Promise.resolve(); }
+};
+window.URLSearchParams = function(init) {
+    this._p = {};
+    var s = typeof init === 'string' ? init.replace(/^\?/, '') : '';
+    if (s) s.split('&').forEach(function(pair) {
+        var i = pair.indexOf('=');
+        var k = decodeURIComponent(i < 0 ? pair : pair.slice(0, i));
+        var v = i < 0 ? '' : decodeURIComponent(pair.slice(i + 1));
+        if (k) this._p[k] = v;
+    }, this);
+    this.get    = function(k) { return Object.prototype.hasOwnProperty.call(this._p, k) ? this._p[k] : null; };
+    this.has    = function(k) { return Object.prototype.hasOwnProperty.call(this._p, k); };
+    this.set    = function(k, v) { this._p[k] = String(v); };
+    this.delete = function(k) { delete this._p[k]; };
+    this.toString = function() {
+        return Object.keys(this._p).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(this._p[k]);
+        }, this).join('&');
+    };
+};
 window.HTMLElement         = function() {};
+window.HTMLTemplateElement = function() {};
 window.HTMLIFrameElement   = function() {};
 window.HTMLInputElement    = function() {};
 window.HTMLTextAreaElement = function() {};
