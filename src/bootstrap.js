@@ -49,7 +49,7 @@ function _r_parse_url(href, base) {
 
 function _r_el(tag) {
     tag = (tag || 'DIV').toUpperCase();
-    return {
+    var el = {
         tagName: tag, nodeType: 1,
         id: '', className: '', name: '', type: '', value: '',
         href: '', src: '', alt: '', placeholder: '',
@@ -146,6 +146,13 @@ function _r_el(tag) {
         requestPointerLock: function() {},
         animate: function() { return { finished: Promise.resolve(), cancel: function(){} }; }
     };
+    if (tag === 'TEMPLATE') {
+        Object.defineProperty(el, 'content', {
+            get: function() { var f = _r_el('div'); f.innerHTML = el.innerHTML; return f; },
+            configurable: true
+        });
+    }
+    return el;
 }
 
 // ─── Serializer ──────────────────────────────────────────────────────────────
