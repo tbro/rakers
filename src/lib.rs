@@ -36,13 +36,22 @@ fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
 }
 
 fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
-    match cfg.apply(ureq::get(url)).call() {
-        Ok(r) => r.into_string().ok(),
+    let body = match cfg.apply(ureq::get(url)).call() {
+        Ok(r) => r.into_string().ok()?,
         Err(e) => {
             eprintln!("[fetch error] {url}: {e}");
-            None
+            return None;
         }
+    };
+    // Skip ES module files that use static import/export — they require a full
+    // module loader with relative specifier resolution that we can't provide.
+    // Self-contained bundles tagged type="module" by their bundler are fine.
+    let trimmed = body.trim_start();
+    if trimmed.starts_with("import ") || trimmed.starts_with("import{") || trimmed.starts_with("export ") {
+        eprintln!("[skip] {url}: ES module syntax requires a module loader");
+        return None;
     }
+    Some(body)
 }
 
 fn load_scripts(
@@ -85,7 +94,28 @@ pub fn render(
         eprintln!("[console] {msg}");
     }
 
-    Ok(doc.serialize_with_body_and_injection(&rt.body_inner_html(), &rt.written_html()))
+    let body_html = rt.body_inner_html();
+
+    // Avoid clobbering large server-rendered bodies (SSR sites) with a tiny JS DOM
+    // result (e.g. a measurement div appended for scrollbar detection).
+    // Only substitute the body when either:
+    //   a) the raw HTML body was small (SPA skeleton, unit-test wrapper, bare JS mode), or
+    //   b) the JS body is at least half the size of the server body (JS rendered real content).
+    let raw_body_len = raw_body_content_len(&html);
+    let effective_body = if raw_body_len < 512 || body_html.len() * 2 >= raw_body_len {
+        body_html.as_str()
+    } else {
+        ""
+    };
+
+    Ok(doc.serialize_with_body_and_injection(effective_body, &rt.written_html()))
+}
+
+fn raw_body_content_len(html: &str) -> usize {
+    let body_start = html.find("<body").unwrap_or(0);
+    let content_start = html[body_start..].find('>').map(|i| i + body_start + 1).unwrap_or(0);
+    let body_end = html.rfind("</body>").unwrap_or(html.len());
+    body_end.saturating_sub(content_start)
 }
 
 /// Fetch `url`, execute its scripts, and return the rendered HTML.

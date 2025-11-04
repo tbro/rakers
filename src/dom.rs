@@ -90,7 +90,6 @@ fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
         let attrs = attrs.borrow();
 
         // Skip non-JS types (JSON, templates, etc.).
-        // We do execute type="module" — it'll fail gracefully if boa can't parse it.
         let type_val = attrs
             .iter()
             .find(|a| &a.name.local == "type")
