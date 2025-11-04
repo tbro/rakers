@@ -40,9 +40,12 @@ rakers https://example.com -o rendered.html
 1. Fetches the page (or reads from file/stdin)
 2. Parses HTML with **html5ever** into a DOM tree
 3. Collects `<script>` tags — inline and external (`src="..."`) — and fetches any external scripts
+   - External scripts that open with `import`/`export` (ES module files requiring a module loader) are automatically skipped; self-contained bundles tagged `type="module"` still execute
+   - Cloudflare Rocket Loader (`type="<hash>-text/javascript"`) is recognized and executed
 4. Executes all scripts in order in a sandboxed JS context with browser globals stubbed out
 5. Flushes any deferred callbacks (`setTimeout`, `requestAnimationFrame`, `MessageChannel`, `queueMicrotask`) so async-rendered frameworks have a chance to run
 6. Reads back `document.body.innerHTML` and serializes the final HTML
+   - Large server-rendered bodies (SSR sites) are preserved when the JS-rendered body is substantially smaller, avoiding measurement/analytics divs from clobbering real content
 
 `.js` files are automatically wrapped in a minimal HTML document before processing.
 
@@ -96,8 +99,26 @@ cargo test --test integration --no-default-features --features rquickjs
 
 The following globals are stubbed so typical JS bundles run without errors:
 
-- **`document`** — `createElement`, `getElementById`, `querySelector`, `body`, `head`, and the full DOM manipulation API (`appendChild`, `insertBefore`, `setAttribute`, etc.)
-- **`window`** — `location`, `navigator`, `history`, `screen`, `performance`, `localStorage`, `sessionStorage`, `matchMedia`, `getComputedStyle`, and all standard event/observer constructors
+- **`document`** — `createElement`, `getElementById`, `querySelector`, `body`, `head`, `currentScript`, and the full DOM manipulation API (`appendChild`, `insertBefore`, `setAttribute`, `innerHTML`, etc.)
+- **`window`** — `location` (with `toString()`), `navigator`, `history`, `screen`, `performance`, `localStorage`, `sessionStorage`, `matchMedia`, `getComputedStyle`, and all standard event/observer constructors
+- **`URL` / `URLSearchParams`** — relative URL resolution against the page URL; `searchParams` with full `get`/`set`/`has`
 - **`fetch` / `XMLHttpRequest`** — stubbed as no-ops (network requests from JS are not made)
+- **`DOMException` / `customElements`** — Web Components registry and DOM exception constructor
 - **`process`** — Node.js-style globals for webpack/Vite bundler compatibility
 - **Timers** — `setTimeout`, `setInterval`, `requestAnimationFrame`, `queueMicrotask`, and `MessageChannel` callbacks are collected and flushed after scripts finish
+
+## Compatibility
+
+Tested against real-world sites with rquickjs:
+
+| Site | Framework | Result |
+|------|-----------|--------|
+| react.dev | Next.js (SSR) | ✓ no errors |
+| svelte.dev | SvelteKit (SSR) | ✓ no errors |
+| vuejs.org | Vite (SSR) | ✓ no errors |
+| tailwindcss.com | Next.js (SSR) | ✓ no errors |
+| remix.run | Remix (SSR) | ✓ no errors |
+| jsbench.me | React SPA | ✓ full render |
+| babylonbee.com | Cloudflare Rocket Loader | ✓ articles intact |
+| linear.app | Next.js | ✓ renders (1 minor error) |
+| github.com | Custom SSR | ✓ renders (4 minor errors) |
