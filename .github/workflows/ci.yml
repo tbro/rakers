@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 env:
@@ -56,3 +57,39 @@ jobs:
         run: cargo test --test cli ${{ matrix.flags }}
       - name: Integration tests
         run: cargo test --test integration ${{ matrix.flags }}
+
+  release:
+    name: Release (${{ matrix.target }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [fmt, clippy, test]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: rakers-linux-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: rakers-macos-aarch64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: rakers-macos-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: Build release binary
+        run: cargo build --release --no-default-features --features rquickjs --target ${{ matrix.target }}
+      - name: Stage binary
+        run: cp target/${{ matrix.target }}/release/rakers ${{ matrix.asset }}
+      - name: Upload to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
