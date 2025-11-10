@@ -107,6 +107,24 @@ The following globals are stubbed so typical JS bundles run without errors:
 - **`process`** — Node.js-style globals for webpack/Vite bundler compatibility
 - **Timers** — `setTimeout`, `setInterval`, `requestAnimationFrame`, `queueMicrotask`, and `MessageChannel` callbacks are collected and flushed after scripts finish
 
+## Comparison
+
+| | rakers | headless Chrome | Playwright / Puppeteer | Splash |
+|--|--------|-----------------|------------------------|--------|
+| **JS compatibility** | Good (QuickJS / ES2023) | Full | Full | Full (WebKit) |
+| **Requires browser** | No | Yes | Yes | Yes (via Docker) |
+| **Startup time** | ~10 ms | ~1–2 s | ~1–2 s | ~500 ms |
+| **Memory** | ~10 MB | ~150–300 MB | ~150–300 MB | ~200 MB |
+| **Network calls from JS** | No (stubbed) | Yes | Yes | Yes |
+| **CSS / layout** | No | Yes | Yes | Yes |
+| **Embeddable as library** | Yes (Rust crate) | No | No | No |
+| **Installation** | Single binary | Chrome + chromedriver | Browser + Node | Docker image |
+| **Language** | Rust | Any | JS / many bindings | Python / Lua |
+
+**When to use rakers** — fast HTML extraction in a scraping pipeline, CI environments without a browser, embedding in a Rust service, or anywhere startup latency and memory footprint matter more than pixel-perfect rendering.
+
+**When to use a headless browser** — pages that rely on CSS-driven layout, canvas, WebGL, WebSockets, or JavaScript that makes authenticated network requests during render.
+
 ## Compatibility
 
 Tested against real-world sites with rquickjs:
