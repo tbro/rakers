@@ -1,7 +1,7 @@
 /// Integration tests that fetch real pages and assert JS rendering produced output.
 /// These tests require network access. Run with:
-///   cargo test --test integration                         (boa engine)
-///   cargo test --test integration --no-default-features --features rquickjs
+///   cargo test --test integration                        (rquickjs, default)
+///   cargo test --test integration --no-default-features --features boa
 use rakers::{HttpConfig, render};
 
 fn fetch(url: &str) -> String {
@@ -13,9 +13,8 @@ fn fetch(url: &str) -> String {
 /// output is substantially larger than the raw skeleton and contains UI elements
 /// ("Run") that are absent before JS executes.
 ///
-/// Requires rquickjs — boa overflows the native stack on real-world JS bundles.
 #[test]
-#[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
+#[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn jsbench_react_spa_renders_ui() {
     let raw = fetch("https://jsbench.me");
     let out = render(
@@ -51,9 +50,8 @@ fn jsbench_react_spa_renders_ui() {
 /// does not break the pipeline: the rendered output must preserve all the
 /// server-rendered articles that were present in the raw HTML.
 ///
-/// Requires rquickjs — boa overflows the native stack on real-world JS bundles.
 #[test]
-#[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
+#[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn babylonbee_rocket_loader_pipeline_intact() {
     let raw = fetch("https://babylonbee.com");
     let out = render(

@@ -93,9 +93,9 @@ fn output_flag_writes_file_not_stdout() {
 }
 
 /// React SPA: server returns a ~2.7 KB skeleton; the bundle renders the full UI.
-/// Requires rquickjs — boa overflows the native stack on the React bundle.
+/// Ignored under boa — it overflows the native stack on the React bundle.
 #[test]
-#[cfg_attr(not(feature = "rquickjs"), ignore = "requires --features rquickjs")]
+#[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn jsbench_url_renders_react_ui() {
     let output = cmd()
         .arg("https://jsbench.me")

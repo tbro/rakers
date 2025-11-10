@@ -30,7 +30,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -- -D warnings
-      - run: cargo clippy --no-default-features --features rquickjs -- -D warnings
+      - run: cargo clippy --no-default-features --features boa -- -D warnings
 
   test:
     name: Test (${{ matrix.engine }})
@@ -39,10 +39,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - engine: boa
-            flags: ""
           - engine: rquickjs
-            flags: --no-default-features --features rquickjs
+            flags: ""
+          - engine: boa
+            flags: --no-default-features --features boa
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
