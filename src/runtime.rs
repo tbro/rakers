@@ -1,3 +1,11 @@
+//! JS engine abstraction used by the rendering pipeline.
+//!
+//! Exposes a single type [`JsRuntime`] backed by whichever engine feature is
+//! enabled at compile time (`rquickjs` or `boa`).  Both backends share the same
+//! public interface: create a runtime, execute a list of scripts, then read back
+//! the accumulated `document.write` output, `document.body.innerHTML`, and
+//! `console` messages.
+
 #[cfg(all(feature = "boa", feature = "rquickjs"))]
 compile_error!("Enable only one JS engine at a time: 'boa' or 'rquickjs'");
 
@@ -36,6 +44,7 @@ const READBACK_JS: &str = r#"
 })()
 "#;
 
+/// Produce the browser-globals bootstrap by substituting the page URL into the template.
 fn make_bootstrap(page_url: Option<&str>) -> String {
     let href = page_url.unwrap_or("about:blank");
     let escaped = href.replace('\\', "\\\\").replace('"', "\\\"");
@@ -60,9 +69,11 @@ mod boa_rt {
         static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
     }
 
+    /// A sandboxed JavaScript execution context backed by boa_engine.
     pub struct JsRuntime;
 
     impl JsRuntime {
+        /// Create a new runtime, clearing any leftover thread-local state from a previous run.
         pub fn new() -> Self {
             WRITTEN.with(|w| w.borrow_mut().clear());
             LOGGED.with(|l| l.borrow_mut().clear());
@@ -70,6 +81,10 @@ mod boa_rt {
             JsRuntime
         }
 
+        /// Evaluate the browser bootstrap and then each script in `scripts` in order.
+        ///
+        /// Errors from individual scripts are printed to stderr and skipped; the method
+        /// only returns `Err` if the bootstrap itself fails to evaluate.
         pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
             let mut ctx = Context::default();
             ctx.runtime_limits_mut().set_stack_size_limit(65536);
@@ -103,19 +118,23 @@ mod boa_rt {
             Ok(())
         }
 
+        /// Return the accumulated output of all `document.write` / `document.writeln` calls.
         pub fn written_html(&self) -> String {
             WRITTEN.with(|w| w.borrow().clone())
         }
 
+        /// Return the final value of `document.body.innerHTML` (or registry element content).
         pub fn body_inner_html(&self) -> String {
             BODY_INNER_HTML.with(|b| b.borrow().clone())
         }
 
+        /// Return all messages logged via `console.log`, `console.warn`, or `console.error`.
         pub fn logged_messages(&self) -> Vec<String> {
             LOGGED.with(|l| l.borrow().clone())
         }
     }
 
+    /// Register `document.write` and `document.writeln` on the boa context.
     fn setup_document(ctx: &mut Context) -> anyhow::Result<()> {
         let mut init = ObjectInitializer::new(ctx);
         init.function(
@@ -134,6 +153,7 @@ mod boa_rt {
         Ok(())
     }
 
+    /// Register `console.log`, `console.warn`, and `console.error` on the boa context.
     fn setup_console(ctx: &mut Context) -> anyhow::Result<()> {
         let mut init = ObjectInitializer::new(ctx);
         init.function(
@@ -208,9 +228,11 @@ mod quickjs_rt {
         static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
     }
 
+    /// A sandboxed JavaScript execution context backed by QuickJS (via rquickjs).
     pub struct JsRuntime;
 
     impl JsRuntime {
+        /// Create a new runtime, clearing any leftover thread-local state from a previous run.
         pub fn new() -> Self {
             WRITTEN.with(|w| w.borrow_mut().clear());
             LOGGED.with(|l| l.borrow_mut().clear());
@@ -218,6 +240,12 @@ mod quickjs_rt {
             JsRuntime
         }
 
+        /// Evaluate the browser bootstrap and then each script in `scripts` in order.
+        ///
+        /// Scripts are evaluated in sloppy (non-strict) mode to match browser behaviour —
+        /// assignments to undeclared globals are allowed, as used by SvelteKit and webpack.
+        /// Errors from individual scripts are printed to stderr and skipped; the method
+        /// only returns `Err` if the bootstrap itself fails to evaluate.
         pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
             let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
             let ctx = Context::full(&rt).map_err(|e| anyhow!("quickjs context: {:?}", e))?;
@@ -265,19 +293,23 @@ mod quickjs_rt {
             Ok(())
         }
 
+        /// Return the accumulated output of all `document.write` / `document.writeln` calls.
         pub fn written_html(&self) -> String {
             WRITTEN.with(|w| w.borrow().clone())
         }
 
+        /// Return the final value of `document.body.innerHTML` (or registry element content).
         pub fn body_inner_html(&self) -> String {
             BODY_INNER_HTML.with(|b| b.borrow().clone())
         }
 
+        /// Return all messages logged via `console.log`, `console.warn`, or `console.error`.
         pub fn logged_messages(&self) -> Vec<String> {
             LOGGED.with(|l| l.borrow().clone())
         }
     }
 
+    /// Register `document.write` and `document.writeln` on the QuickJS context.
     fn setup_document(ctx: Ctx<'_>) -> anyhow::Result<()> {
         let doc = Object::new(ctx.clone()).map_err(|e| anyhow!("{:?}", e))?;
 
@@ -311,6 +343,7 @@ mod quickjs_rt {
         Ok(())
     }
 
+    /// Register `console.log`, `console.warn`, and `console.error` on the QuickJS context.
     fn setup_console(ctx: Ctx<'_>) -> anyhow::Result<()> {
         use rquickjs::function::Rest;
 

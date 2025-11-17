@@ -32,10 +32,14 @@ struct Cli {
     headers: Vec<String>,
 }
 
+/// Return `true` if `s` is an `http://` or `https://` URL.
 fn is_url(s: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
+/// Build an [`HttpConfig`] from the parsed CLI arguments.
+///
+/// Returns an error if any `-H` header value is not in `"Name: Value"` format.
 fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
     let mut headers = Vec::new();
     for raw in &cli.headers {
@@ -50,6 +54,10 @@ fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
     })
 }
 
+/// Read the input source and return `(content, is_js)`.
+///
+/// For URLs the content is fetched over HTTP. For file paths the content is read
+/// from disk; `is_js` is `true` when the file extension is `.js`.
 fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
     if is_url(input) {
         let body = cfg.apply(ureq::get(input)).call()?.into_string()?;

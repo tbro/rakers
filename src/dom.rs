@@ -1,3 +1,10 @@
+//! HTML parsing, script extraction, and serialization.
+//!
+//! Wraps html5ever and markup5ever_rcdom to provide the three operations
+//! the rendering pipeline needs: parse an HTML string into a DOM, walk the
+//! DOM to collect `<script>` sources in document order, and serialize the
+//! (optionally mutated) DOM back to an HTML string.
+
 use html5ever::{
     ParseOpts, parse_document,
     serialize::{SerializeOpts, TraversalScope, serialize},
@@ -5,15 +12,20 @@ use html5ever::{
 };
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
 
+/// The source of a `<script>` element's JavaScript.
 pub enum ScriptSource {
+    /// Script whose code is inlined in the HTML.
     Inline(String),
-    External(String), // value of src="..." (may be relative)
+    /// Script loaded via a `src` attribute; the value may be relative.
+    External(String),
 }
 
+/// A parsed HTML document, ready for script extraction and serialization.
 pub struct Document {
     dom: RcDom,
 }
 
+/// Parse `html` into a [`Document`] using the html5ever HTML5 parser.
 pub fn parse(html: &str) -> Document {
     let dom = parse_document(RcDom::default(), ParseOpts::default())
         .from_utf8()
@@ -23,16 +35,23 @@ pub fn parse(html: &str) -> Document {
 }
 
 impl Document {
-    /// Walk the DOM tree and return every script in document order.
-    /// Inline scripts carry their text; external scripts carry the src value.
+    /// Walk the DOM and return every executable `<script>` in document order.
+    ///
+    /// Inline scripts carry their text content; external scripts carry the raw
+    /// `src` attribute value (which may be relative).  Non-JS types (JSON,
+    /// templates, etc.) are skipped.
     pub fn extract_scripts(&self) -> Vec<ScriptSource> {
         let mut out = Vec::new();
         collect_scripts(&self.dom.document, &mut out);
         out
     }
 
-    /// Serialize the DOM, optionally replacing the body content with `body_html`
-    /// (from JS DOM mutations) and appending `extra` (from document.write).
+    /// Serialize the DOM to an HTML string, applying post-execution mutations.
+    ///
+    /// `body_html` — if non-empty, replaces the content between `<body>` and `</body>`
+    /// with the JS-rendered DOM (from `document.body.innerHTML`).
+    ///
+    /// `extra` — appended just before `</body>`; carries output from `document.write`.
     pub fn serialize_with_body_and_injection(&self, body_html: &str, extra: &str) -> String {
         let mut bytes = Vec::new();
         serialize(
@@ -67,7 +86,7 @@ impl Document {
     }
 }
 
-/// Returns the byte range of the content inside `<body>...</body>`.
+/// Return the byte range of the content between the opening `<body>` tag and `</body>`.
 fn body_content_range(html: &str) -> Option<(usize, usize)> {
     let body_pos = html.find("<body")?;
     let tag_close = html[body_pos..].find('>')? + body_pos + 1;
@@ -79,6 +98,8 @@ fn body_content_range(html: &str) -> Option<(usize, usize)> {
     }
 }
 
+/// Recursively walk the subtree rooted at `handle`, appending any executable
+/// scripts to `out` in document order.
 fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
     if let NodeData::Element {
         ref name,

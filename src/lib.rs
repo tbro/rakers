@@ -1,13 +1,22 @@
+//! Core rendering pipeline for rakers.
+//!
+//! Parses HTML, collects and executes scripts in a sandboxed JS context,
+//! then serializes the post-execution DOM back to HTML.
+
 mod dom;
 mod runtime;
 
+/// HTTP options applied to every outbound request made by rakers.
 #[derive(Default)]
 pub struct HttpConfig {
+    /// Value for the `User-Agent` header. `None` sends no `User-Agent`.
     pub user_agent: Option<String>,
+    /// Additional headers sent with every request, in `(name, value)` form.
     pub headers: Vec<(String, String)>,
 }
 
 impl HttpConfig {
+    /// Apply the configured user-agent and headers to `req`, returning the modified request.
     pub fn apply(&self, req: ureq::Request) -> ureq::Request {
         let mut req = req;
         if let Some(ua) = &self.user_agent {
@@ -20,6 +29,10 @@ impl HttpConfig {
     }
 }
 
+/// Resolve `src` against an optional `base` URL, returning an absolute `http`/`https` URL.
+///
+/// Returns `None` for `data:` and `blob:` URLs (not fetchable), and when `src` is relative
+/// but no base is available.
 fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
     if src.starts_with("data:") || src.starts_with("blob:") {
         return None;
@@ -35,6 +48,11 @@ fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
     Some(resolved.to_string())
 }
 
+/// Fetch the script at `url` and return its source text.
+///
+/// Returns `None` on network error or if the response body is not valid UTF-8.
+/// Files that open with `import`/`export` are skipped — they are ES module entry
+/// points that require a full module loader with relative specifier resolution.
 fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
     let body = match cfg.apply(ureq::get(url)).call() {
         Ok(r) => r.into_string().ok()?,
@@ -54,6 +72,10 @@ fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
     Some(body)
 }
 
+/// Resolve and fetch all script sources, returning a list of executable JS strings.
+///
+/// Inline scripts are returned as-is. External scripts are resolved against `page_url`
+/// and fetched; any that fail or are skipped (e.g. ES module files) are omitted.
 fn load_scripts(
     sources: Vec<dom::ScriptSource>,
     page_url: Option<&str>,
@@ -72,6 +94,16 @@ fn load_scripts(
         .collect()
 }
 
+/// Parse `input`, execute its scripts, and return the rendered HTML.
+///
+/// `is_js` — when `true`, `input` is treated as a bare JS snippet and wrapped in a
+/// minimal HTML document before processing (used for `.js` file inputs).
+///
+/// `page_url` — the URL the page was fetched from, used for resolving relative script
+/// `src` attributes and populating `window.location`.
+///
+/// Script errors are non-fatal; execution continues with the next script.
+/// `console.log/warn/error` output is printed to stderr with a `[console]` prefix.
 pub fn render(
     input: &str,
     is_js: bool,
@@ -111,6 +143,10 @@ pub fn render(
     Ok(doc.serialize_with_body_and_injection(effective_body, &rt.written_html()))
 }
 
+/// Return the byte length of the content inside `<body>...</body>`, excluding the tags.
+///
+/// Used by [`render`] to decide whether the JS-rendered body is substantial enough to
+/// replace the server-rendered body (SSR heuristic).
 fn raw_body_content_len(html: &str) -> usize {
     let body_start = html.find("<body").unwrap_or(0);
     let content_start = html[body_start..].find('>').map(|i| i + body_start + 1).unwrap_or(0);
@@ -119,6 +155,8 @@ fn raw_body_content_len(html: &str) -> usize {
 }
 
 /// Fetch `url`, execute its scripts, and return the rendered HTML.
+///
+/// Convenience wrapper around [`render`] that handles the HTTP fetch.
 pub fn render_url(url: &str, cfg: &HttpConfig) -> anyhow::Result<String> {
     let body = cfg.apply(ureq::get(url)).call()?.into_string()?;
     render(&body, false, Some(url), cfg)
