@@ -59,7 +59,7 @@ function _r_el(tag) {
         // ownerDocument — lazily returns the global document so React's event setup doesn't crash
         get ownerDocument() { return typeof document !== 'undefined' ? document : null; },
         style: {}, dataset: {},
-        innerHTML: '', textContent: '',
+        innerHTML: '',
         parentNode: null, parentElement: null,
         classList: {
             _c: [],
@@ -146,6 +146,15 @@ function _r_el(tag) {
         requestPointerLock: function() {},
         animate: function() { return { finished: Promise.resolve(), cancel: function(){} }; }
     };
+    Object.defineProperty(el, 'textContent', {
+        get: function() {
+            return el.innerHTML.replace(/<[^>]*>/g, '');
+        },
+        set: function(v) {
+            el.innerHTML = _r_esc(v == null ? '' : String(v));
+        },
+        configurable: true
+    });
     if (tag === 'TEMPLATE') {
         Object.defineProperty(el, 'content', {
             get: function() { var f = _r_el('div'); f.innerHTML = el.innerHTML; return f; },
