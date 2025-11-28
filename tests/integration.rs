@@ -8,6 +8,36 @@ fn fetch(url: &str) -> String {
     ureq::get(url).call().unwrap().into_string().unwrap()
 }
 
+/// todomvc.com/examples/react/dist/ serves a ~645-byte skeleton with an empty
+/// `<section id="root">`; the React bundle renders the full todo-app UI client-side.
+/// This is the canonical demo for rakers: dramatic before/after, zero JS errors.
+#[test]
+#[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
+fn todomvc_react_spa_renders_ui() {
+    let raw = fetch("https://todomvc.com/examples/react/dist/");
+    let out = render(
+        &raw,
+        false,
+        Some("https://todomvc.com/examples/react/dist/"),
+        &HttpConfig::default(),
+    )
+    .unwrap();
+
+    // Raw skeleton has an empty <section id="root">; rendered output must contain the app.
+    assert!(
+        !raw.contains("<h1>todos</h1>"),
+        "sanity: '<h1>todos</h1>' should be absent in the raw skeleton"
+    );
+    assert!(
+        out.contains("<h1>todos</h1>"),
+        "'<h1>todos</h1>' not found in rendered output — React may not have rendered the TodoMVC UI"
+    );
+    assert!(
+        out.contains("class=\"new-todo\""),
+        "new-todo input absent — React may not have rendered the TodoMVC UI"
+    );
+}
+
 /// jsbench.me serves a ~2.7 KB skeleton with an empty React root; the JS bundle
 /// renders the full benchmark UI client-side. This test confirms that the rendered
 /// output is substantially larger than the raw skeleton and contains UI elements

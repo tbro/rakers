@@ -92,6 +92,30 @@ fn output_flag_writes_file_not_stdout() {
     );
 }
 
+/// TodoMVC React SPA: server returns a ~645-byte skeleton with an empty `<section id="root">`;
+/// the React bundle renders the full todo-app UI into it.
+#[test]
+#[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
+fn todomvc_react_renders_ui() {
+    let output = cmd()
+        .arg("https://todomvc.com/examples/react/dist/")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "rakers exited with non-zero status");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Raw skeleton has an empty <section id="root">; React fills it in.
+    assert!(
+        stdout.contains("<h1>todos</h1>"),
+        "'<h1>todos</h1>' absent — React may not have rendered the TodoMVC UI"
+    );
+    assert!(
+        stdout.contains("class=\"new-todo\""),
+        "new-todo input absent — React may not have rendered the TodoMVC UI"
+    );
+}
+
 /// React SPA: server returns a ~2.7 KB skeleton; the bundle renders the full UI.
 /// Ignored under boa — it overflows the native stack on the React bundle.
 #[test]
