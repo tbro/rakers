@@ -67,10 +67,20 @@ impl Document {
         let mut html = String::from_utf8(bytes).expect("html5ever always outputs utf-8");
 
         // Replace body content when JS rendered into the DOM.
-        if !body_html.is_empty()
-            && let Some((start, end)) = body_content_range(&html)
-        {
-            html.replace_range(start..end, body_html);
+        // Prefer targeted replacement (swap just the root element by id) so that
+        // static siblings like <footer class="info"> are preserved.  Fall back to
+        // a full body-content replacement when no root id can be identified.
+        if !body_html.is_empty() {
+            let replaced = first_element_id(body_html)
+                .and_then(|id| find_element_range_by_id(&html, &id))
+                .map(|range| html.replace_range(range, body_html))
+                .is_some();
+
+            if !replaced {
+                if let Some((start, end)) = body_content_range(&html) {
+                    html.replace_range(start..end, body_html);
+                }
+            }
         }
 
         // Inject document.write() output just before </body>.
@@ -96,6 +106,82 @@ fn body_content_range(html: &str) -> Option<(usize, usize)> {
     } else {
         None
     }
+}
+
+/// Extract the `id` attribute value from the first element in `html`.
+///
+/// html5ever always serializes attribute values with double quotes, so we only
+/// need to look for `id="…"`.
+fn first_element_id(html: &str) -> Option<String> {
+    let s = html.trim_start();
+    let tag_end = s.find('>')?;
+    let tag = &s[1..tag_end];
+    let marker = "id=\"";
+    let pos = tag.find(marker)? + marker.len();
+    let end = tag[pos..].find('"')? + pos;
+    let id = &tag[pos..end];
+    if id.is_empty() { None } else { Some(id.to_owned()) }
+}
+
+/// Find the byte range of the element with `id="<id>"` in `html`.
+///
+/// Returns a range spanning the full element — opening tag through closing tag.
+/// Handles nested same-name elements via a depth counter.
+fn find_element_range_by_id(html: &str, id: &str) -> Option<std::ops::Range<usize>> {
+    let needle = format!("id=\"{}\"", id);
+    let attr_pos = html.find(&needle)?;
+    let tag_start = html[..attr_pos].rfind('<')?;
+
+    let after_lt = &html[tag_start + 1..];
+    let name_len = after_lt.find(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/')?;
+    let tag_name = after_lt[..name_len].to_ascii_lowercase();
+
+    let open_end = html[tag_start..].find('>')? + tag_start + 1;
+
+    // Void elements have no closing tag.
+    const VOID: &[&str] = &[
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    ];
+    if VOID.contains(&tag_name.as_str())
+        || html[tag_start..open_end].ends_with("/>")
+    {
+        return Some(tag_start..open_end);
+    }
+
+    // Walk forward, counting open/close tags of the same name to find the match.
+    let open_pat  = format!("<{}", tag_name);   // e.g. "<div"
+    let close_pat = format!("</{}>", tag_name); // e.g. "</div>"
+    let mut depth: usize = 1;
+    let mut pos = open_end;
+
+    while depth > 0 {
+        let rest = &html[pos..];
+        let next_open  = rest.find(&open_pat).map(|p| p + pos);
+        let next_close = rest.find(&close_pat).map(|p| p + pos);
+
+        match (next_open, next_close) {
+            (Some(o), Some(c)) if o < c => {
+                // Verify this is a real tag boundary (next char is whitespace, '>', or '/').
+                let after = html.as_bytes().get(o + open_pat.len()).copied();
+                if matches!(after, Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'>') | Some(b'/')) {
+                    depth += 1;
+                }
+                pos = o + open_pat.len();
+            }
+            (_, Some(c)) => {
+                depth -= 1;
+                let close_end = c + close_pat.len();
+                if depth == 0 {
+                    return Some(tag_start..close_end);
+                }
+                pos = close_end;
+            }
+            _ => return None,
+        }
+    }
+
+    None
 }
 
 /// Recursively walk the subtree rooted at `handle`, appending any executable
