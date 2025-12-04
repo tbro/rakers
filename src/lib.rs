@@ -66,10 +66,56 @@ fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
     // Self-contained bundles tagged type="module" by their bundler are fine.
     let trimmed = body.trim_start();
     if trimmed.starts_with("import ") || trimmed.starts_with("import{") || trimmed.starts_with("export ") {
+        // Narrow exception: a file whose entire content is a single bare side-effect
+        // import (`import './bundle.js'`) is a Vite/Rollup entry-point shim that
+        // just loads one self-contained bundle.  Follow that one hop.
+        if let Some(target) = single_reexport_target(trimmed) {
+            if let Some(resolved) = resolve_url(target, Some(url)) {
+                eprintln!("[module-shim] {url} → {resolved}");
+                return fetch_script(&resolved, cfg);
+            }
+        }
         eprintln!("[skip] {url}: ES module syntax requires a module loader");
         return None;
     }
     Some(body)
+}
+
+/// If `src` is a JS module whose only statement is a single side-effect import
+/// (`import './bundle.js'` or `import "../path/to/bundle.js"`), return the
+/// specifier string.  Returns `None` for anything more complex.
+///
+/// This handles the common Vite/Rollup entry-point shim pattern where the HTML
+/// `<script type="module">` points at a tiny file that just re-exports a bundle.
+fn single_reexport_target(src: &str) -> Option<&str> {
+    // Strip block comments and collapse whitespace just enough to check structure.
+    let s = src.trim();
+    // Must start with `import ` and contain exactly one statement.
+    if !s.starts_with("import ") {
+        return None;
+    }
+    // A bare side-effect import looks like: import 'specifier' or import "specifier"
+    // optionally followed by a semicolon and nothing else (modulo whitespace).
+    let after_import = s["import".len()..].trim_start();
+    let (quote, rest) = match after_import.chars().next()? {
+        '\'' => ('\'', &after_import[1..]),
+        '"'  => ('"',  &after_import[1..]),
+        _    => return None, // not a bare side-effect import
+    };
+    let specifier_end = rest.find(quote)?;
+    let specifier = &rest[..specifier_end];
+    // Verify there is nothing meaningful after the closing quote.
+    let tail = rest[specifier_end + 1..].trim().trim_start_matches(';').trim();
+    if !tail.is_empty() {
+        return None; // more than one statement
+    }
+    // Only follow relative or absolute-path specifiers; skip bare specifiers
+    // (npm package names) that require a module resolver.
+    if specifier.starts_with("./") || specifier.starts_with("../") || specifier.starts_with('/') {
+        Some(specifier)
+    } else {
+        None
+    }
 }
 
 /// Resolve and fetch all script sources, returning a list of executable JS strings.
@@ -348,5 +394,20 @@ mod tests {
             out.contains("<p>App content</p>"),
             "getElementById + appendChild captured"
         );
+    }
+
+    #[test]
+    fn single_reexport_target_detects_shim() {
+        assert_eq!(single_reexport_target("import './bundle.js'"), Some("./bundle.js"));
+        assert_eq!(single_reexport_target("import \"../dist/app.js\";"), Some("../dist/app.js"));
+        assert_eq!(single_reexport_target("import '/assets/main.js'\n"), Some("/assets/main.js"));
+        // Multiple statements — not a shim
+        assert_eq!(single_reexport_target("import './a.js'\nimport './b.js'"), None);
+        // Named import — not a bare side-effect import
+        assert_eq!(single_reexport_target("import { foo } from './lib.js'"), None);
+        // Bare specifier (npm package) — don't follow
+        assert_eq!(single_reexport_target("import 'react'"), None);
+        // Regular IIFE bundle — not a module
+        assert_eq!(single_reexport_target("(function(){ var x = 1; })()"), None);
     }
 }
