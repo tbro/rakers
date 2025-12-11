@@ -58,6 +58,21 @@ jobs:
       - name: Integration tests
         run: cargo test --test integration ${{ matrix.flags }}
 
+  todomvc-compat:
+    name: TodoMVC compatibility
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: todomvc
+      - name: Build
+        run: cargo build -q
+      - name: Run compatibility sweep
+        run: bash scripts/todomvc_compat.sh ./target/debug/rakers
+
   release:
     name: Release (${{ matrix.target }})
     if: startsWith(github.ref, 'refs/tags/v')
