@@ -30,6 +30,12 @@ struct Cli {
     /// Example: -H "CF-No-Mirage: 1"
     #[arg(short = 'H', long = "header", value_name = "HEADER")]
     headers: Vec<String>,
+
+    /// Strip <script> elements, <link rel="modulepreload">, and unwrap <noscript>
+    /// from the output — produces a static, crawlable snapshot similar to what
+    /// prerendering services deliver to search-engine bots.
+    #[arg(long)]
+    clean: bool,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -87,7 +93,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let result = render(&input, is_js, page_url, &cfg)?;
+    let result = render(&input, is_js, page_url, &cfg, cli.clean)?;
 
     match &cli.output {
         Some(path) => fs::write(path, &result)?,

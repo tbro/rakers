@@ -150,11 +150,14 @@ fn load_scripts(
 ///
 /// Script errors are non-fatal; execution continues with the next script.
 /// `console.log/warn/error` output is printed to stderr with a `[console]` prefix.
+///
+/// When `clean` is `true` a post-processing pass is applied (see [`clean_document`]).
 pub fn render(
     input: &str,
     is_js: bool,
     page_url: Option<&str>,
     cfg: &HttpConfig,
+    clean: bool,
 ) -> anyhow::Result<String> {
     let html = if is_js {
         format!("<!DOCTYPE html><html><head></head><body><script>{input}</script></body></html>")
@@ -186,7 +189,80 @@ pub fn render(
         ""
     };
 
-    Ok(doc.serialize_with_body_and_injection(effective_body, &rt.written_html()))
+    let out = doc.serialize_with_body_and_injection(effective_body, &rt.written_html());
+    Ok(if clean { clean_document(out) } else { out })
+}
+
+/// Strip scripts and unwrap `<noscript>` elements from rendered HTML.
+///
+/// Intended to produce a static, crawlable snapshot similar to what
+/// prerendering services (Prerender.io, rendertron) deliver to bots:
+///
+/// - `<script>` elements (both inline and `src=`) are removed entirely.
+/// - `<link rel="modulepreload">` and `<link rel="preload" as="script">` are removed.
+/// - `<noscript>` wrappers are removed but their inner content is kept, so
+///   crawlers see any fallback markup (e.g. `<meta>` redirects, image links).
+pub fn clean_document(mut html: String) -> String {
+    html = remove_script_elements(html);
+    html = remove_preload_links(html);
+    html = unwrap_noscript(html);
+    html
+}
+
+/// Remove all `<script>…</script>` elements.
+fn remove_script_elements(mut html: String) -> String {
+    const OPEN: &str = "<script";
+    const CLOSE: &str = "</script>";
+    while let Some(start) = html.find(OPEN) {
+        // Guard against false matches like a hypothetical <scriptures> tag.
+        let next = html.as_bytes().get(start + OPEN.len()).copied();
+        if !matches!(next, Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r') | Some(b'>') | Some(b'/') | None) {
+            break;
+        }
+        let end = html[start..]
+            .find(CLOSE)
+            .map(|p| start + p + CLOSE.len())
+            .unwrap_or(html.len());
+        html.drain(start..end);
+    }
+    html
+}
+
+/// Remove `<link rel="modulepreload">` and `<link rel="preload" as="script">` elements.
+fn remove_preload_links(mut html: String) -> String {
+    const OPEN: &str = "<link";
+    let mut pos = 0;
+    while let Some(rel) = html[pos..].find(OPEN).map(|p| p + pos) {
+        let tag_end = match html[rel..].find('>') {
+            Some(p) => rel + p + 1,
+            None => break,
+        };
+        let tag = &html[rel..tag_end];
+        let is_modulepreload = tag.contains("modulepreload");
+        let is_preload_script = tag.contains("preload") && tag.contains("as=\"script\"");
+        if is_modulepreload || is_preload_script {
+            html.drain(rel..tag_end);
+        } else {
+            pos = tag_end;
+        }
+    }
+    html
+}
+
+/// Remove `<noscript>` and `</noscript>` tags, keeping the content between them.
+fn unwrap_noscript(mut html: String) -> String {
+    // html5ever always lowercases tag names; no attributes appear on <noscript>.
+    loop {
+        // Remove opening tag (may have no attributes, so just "<noscript>")
+        let Some(open_start) = html.find("<noscript") else { break };
+        let Some(open_end) = html[open_start..].find('>').map(|p| open_start + p + 1) else { break };
+        html.drain(open_start..open_end);
+        // Remove the matching closing tag (now starts searching from open_start).
+        if let Some(close) = html[open_start..].find("</noscript>").map(|p| open_start + p) {
+            html.drain(close..close + "</noscript>".len());
+        }
+    }
+    html
 }
 
 /// Return the byte length of the content inside `<body>...</body>`, excluding the tags.
@@ -203,9 +279,9 @@ fn raw_body_content_len(html: &str) -> usize {
 /// Fetch `url`, execute its scripts, and return the rendered HTML.
 ///
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
-pub fn render_url(url: &str, cfg: &HttpConfig) -> anyhow::Result<String> {
+pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
     let body = cfg.apply(ureq::get(url)).call()?.into_string()?;
-    render(&body, false, Some(url), cfg)
+    render(&body, false, Some(url), cfg, clean)
 }
 
 #[cfg(test)]
@@ -213,7 +289,7 @@ mod tests {
     use super::*;
 
     fn render_simple(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
-        render(input, is_js, page_url, &HttpConfig::default())
+        render(input, is_js, page_url, &HttpConfig::default(), false)
     }
 
     #[test]
@@ -394,6 +470,30 @@ mod tests {
             out.contains("<p>App content</p>"),
             "getElementById + appendChild captured"
         );
+    }
+
+    #[test]
+    fn clean_removes_scripts_and_unwraps_noscript() {
+        let html = concat!(
+            "<!DOCTYPE html><html><head>",
+            r#"<link rel="modulepreload" href="/bundle.js">"#,
+            r#"<link rel="preload" as="script" href="/chunk.js">"#,
+            r#"<link rel="stylesheet" href="/style.css">"#, // must be kept
+            "</head><body>",
+            "<h1>Hello</h1>",
+            r#"<script src="/app.js"></script>"#,
+            "<script>var x = 1;</script>",
+            "<noscript><p>JS required</p></noscript>",
+            "</body></html>",
+        );
+        let out = render(html, false, None, &HttpConfig::default(), true).unwrap();
+        assert!(!out.contains("<script"),      "script tags removed");
+        assert!(!out.contains("modulepreload"),"modulepreload link removed");
+        assert!(!out.contains(r#"as="script""#), "preload-script link removed");
+        assert!( out.contains(r#"rel="stylesheet""#), "stylesheet link preserved");
+        assert!(!out.contains("<noscript"),    "noscript tags removed");
+        assert!( out.contains("<p>JS required</p>"), "noscript content preserved");
+        assert!( out.contains("<h1>Hello</h1>"),     "regular content preserved");
     }
 
     #[test]

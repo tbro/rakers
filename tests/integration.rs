@@ -20,6 +20,7 @@ fn todomvc_react_spa_renders_ui() {
         false,
         Some("https://todomvc.com/examples/react/dist/"),
         &HttpConfig::default(),
+        false,
     )
     .unwrap();
 
@@ -52,6 +53,7 @@ fn jsbench_react_spa_renders_ui() {
         false,
         Some("https://jsbench.me"),
         &HttpConfig::default(),
+        false,
     )
     .unwrap();
 
@@ -89,6 +91,7 @@ fn babylonbee_rocket_loader_pipeline_intact() {
         false,
         Some("https://babylonbee.com"),
         &HttpConfig::default(),
+        false,
     )
     .unwrap();
 
@@ -121,7 +124,7 @@ fn custom_user_agent_is_sent() {
         .unwrap()
         .into_string()
         .unwrap();
-    let out = render(&raw, false, Some("https://httpbin.org/user-agent"), &cfg).unwrap();
+    let out = render(&raw, false, Some("https://httpbin.org/user-agent"), &cfg, false).unwrap();
 
     assert!(
         out.contains("rakers-test/1.0"),
