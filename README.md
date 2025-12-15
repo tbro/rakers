@@ -35,6 +35,15 @@ By default output goes to stdout. Use `-o` to write to a file:
 rakers https://example.com -o rendered.html
 ```
 
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `-o FILE` | Write output to FILE instead of stdout |
+| `-A UA` | Set the `User-Agent` header for all HTTP requests |
+| `-H "Name: Value"` | Add a custom request header (repeatable) |
+| `--clean` | Strip `<script>` elements and unwrap `<noscript>` — see [Clean mode](#clean-mode) |
+
 ## How it works
 
 1. Fetches the page (or reads from file/stdin)
@@ -51,6 +60,20 @@ rakers https://example.com -o rendered.html
 
 `console.log`, `console.warn`, and `console.error` print to stderr with a `[console]` prefix.
 Script errors are non-fatal — execution continues with the next script.
+
+## Clean mode
+
+`--clean` applies a post-processing pass that produces a static, crawlable snapshot — similar to what prerendering services (Prerender.io, rendertron) deliver to search-engine bots:
+
+- Removes all `<script>` elements (inline and external)
+- Removes `<link rel="modulepreload">` and `<link rel="preload" as="script">`
+- Unwraps `<noscript>` — strips the tags but keeps the inner content, so crawlers see any fallback markup (meta redirects, image links, etc.)
+
+```sh
+rakers --clean https://example.com -o static.html
+```
+
+The output is self-contained HTML with no executable code — safe to serve directly to crawlers or store as a static snapshot.
 
 ## JS engine choice
 
@@ -125,6 +148,29 @@ The following globals are stubbed so typical JS bundles run without errors:
 
 **When to use a headless browser** — pages that rely on CSS-driven layout, canvas, WebGL, WebSockets, or JavaScript that makes authenticated network requests during render.
 
+## Demo
+
+[TodoMVC React](https://todomvc.com/examples/react/dist/) is the canonical demo. The server returns a 645-byte skeleton:
+
+```html
+<section class="todoapp" id="root"></section>
+```
+
+rakers executes the React bundle and returns the fully rendered app:
+
+```html
+<div id="root">
+  <header class="header">
+    <h1>todos</h1>
+    <div class="input-container">
+      <input class="new-todo" type="text">
+      ...
+    </div>
+  </header>
+  ...
+</div>
+```
+
 ## Compatibility
 
 Tested against real-world sites with rquickjs:
@@ -137,6 +183,10 @@ Tested against real-world sites with rquickjs:
 | tailwindcss.com | Next.js (SSR) | ✓ no errors |
 | remix.run | Remix (SSR) | ✓ no errors |
 | jsbench.me | React SPA | ✓ full render |
+| todomvc.com/examples/react | React SPA | ✓ full render |
+| todomvc.com/examples/react-redux | React+Redux SPA | ✓ full render |
 | babylonbee.com | Cloudflare Rocket Loader | ✓ articles intact |
 | linear.app | Next.js | ✓ renders (1 minor error) |
 | github.com | Custom SSR | ✓ renders (4 minor errors) |
+
+A full sweep of all 20 TodoMVC examples runs automatically on every push via the `todomvc-compat` CI job.
