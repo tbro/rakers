@@ -1,6 +1,10 @@
 # rakers
 
-A CLI that renders JavaScript into HTML. Give it an HTML file, a URL, or a bare JS script and it returns the post-execution HTML — including content rendered by React, Vue, and other JS frameworks.
+A lightweight, zero-dependency scraping tool for SSR sites and simple React
+SPAs, where startup latency (milliseconds vs. 1-2 seconds) and memory footprint
+(~10 MB vs. ~300 MB) matter more than compatibility breadth.
+
+`rackers` renders JavaScript into HTML. Give it an HTML file, a URL, or a bare JS script and it returns the post-execution HTML — including content rendered by React, Vue, and other JS frameworks.
 
 Built on [html5ever](https://github.com/servo/html5ever) (Servo's HTML5 parser) with a choice of JS engine: [QuickJS](https://bellard.org/quickjs/) via [rquickjs](https://github.com/DelSkayn/rquickjs) (default) or [boa_engine](https://github.com/boa-dev/boa) (pure-Rust, no C compiler required).
 
