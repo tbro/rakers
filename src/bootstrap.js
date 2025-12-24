@@ -219,12 +219,29 @@ document.getElementById = function(id) {
     return _r_reg[id];
 };
 document.getElementsByClassName = function() { return []; };
-document.getElementsByTagName   = function() { return []; };
+document.getElementsByTagName   = function(tag) {
+    if (!tag) return [];
+    var t = tag.toUpperCase();
+    if (t === 'HEAD')   return [document.head];
+    if (t === 'BODY')   return [document.body];
+    if (t === 'HTML')   return [document.documentElement];
+    // Bundlers (webpack GA snippet) do getElementsByTagName('script')[0].parentNode
+    // to find an insertion point. Return a script-like element parented to head.
+    if (t === 'SCRIPT') return [document.currentScript];
+    return [];
+};
 document.getElementsByName      = function() { return []; };
 document.querySelector = function(sel) {
     if (!sel) return null;
+    // #id selector
     var m = sel.match(/^#([\w-]+)$/);
     if (m) return document.getElementById(m[1]);
+    // bare tag selectors (used by style-loader, css-in-js, analytics snippets)
+    var tag = sel.replace(/[:\s>+~[*].*$/, '').trim().toUpperCase();
+    if (tag === 'HEAD')   return document.head;
+    if (tag === 'BODY')   return document.body;
+    if (tag === 'HTML')   return document.documentElement;
+    if (tag === 'SCRIPT') return document.currentScript;
     return null;
 };
 document.querySelectorAll = function(sel) {

@@ -76,6 +76,49 @@ fn jsbench_react_spa_renders_ui() {
     );
 }
 
+/// v5.reactrouter.com serves a ~1.8 KB CSR-only skeleton (`<div id="app"></div>`);
+/// the React Router bundle renders the full docs homepage (hero, tagline, nav).
+/// This test specifically exercises two shim fixes:
+///   - getElementsByTagName('script') → needed by the GA analytics snippet
+///   - querySelector('head')          → needed by style-loader CSS injection
+/// Without those fixes the bundle crashed before mounting and produced no output.
+#[test]
+#[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
+fn reactrouter_v5_homepage_renders() {
+    let raw = fetch("https://v5.reactrouter.com/");
+    let out = render(
+        &raw,
+        false,
+        Some("https://v5.reactrouter.com/"),
+        &HttpConfig::default(),
+        false,
+    )
+    .unwrap();
+
+    assert!(
+        raw.contains("<div id=\"app\"></div>"),
+        "sanity: raw HTML should have an empty app container"
+    );
+    assert!(
+        !raw.contains("Learn once, Route anywhere"),
+        "sanity: tagline should be absent in raw skeleton"
+    );
+    assert!(
+        out.contains("React Router"),
+        "'React Router' not found in rendered output"
+    );
+    assert!(
+        out.contains("Learn once, Route anywhere"),
+        "homepage tagline absent — React bundle may not have mounted"
+    );
+    assert!(
+        out.len() > raw.len() * 5,
+        "rendered ({} bytes) should be >5× raw skeleton ({} bytes) — bundle may not have run",
+        out.len(),
+        raw.len()
+    );
+}
+
 /// babylonbee.com uses Cloudflare Rocket Loader, which rewrites script types to
 /// "<hex-hash>-text/javascript". The site content is server-rendered, so this test
 /// does not assert that JS added DOM — instead it asserts that our hash-type filter
