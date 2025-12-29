@@ -220,7 +220,24 @@ mod quickjs_rt {
     use std::cell::RefCell;
 
     use anyhow::anyhow;
-    use rquickjs::{Context, Ctx, Function, Object, Runtime, Value, context::EvalOptions};
+    use rquickjs::{
+        Context, Ctx, Function, Module, Object, Runtime, Value, context::EvalOptions,
+        loader::{Loader, Resolver},
+    };
+
+    struct StubModuleSystem;
+
+    impl Resolver for StubModuleSystem {
+        fn resolve<'js>(&mut self, _ctx: &Ctx<'js>, _base: &str, name: &str) -> rquickjs::Result<String> {
+            Ok(name.to_string())
+        }
+    }
+
+    impl Loader for StubModuleSystem {
+        fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> rquickjs::Result<Module<'js>> {
+            Module::declare(ctx.clone(), name, "export default {};")
+        }
+    }
 
     thread_local! {
         static WRITTEN:         RefCell<String>      = const { RefCell::new(String::new()) };
@@ -248,6 +265,7 @@ mod quickjs_rt {
         /// only returns `Err` if the bootstrap itself fails to evaluate.
         pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
             let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
+            rt.set_loader(StubModuleSystem, StubModuleSystem);
             let ctx = Context::full(&rt).map_err(|e| anyhow!("quickjs context: {:?}", e))?;
 
             ctx.with(|ctx| -> anyhow::Result<()> {
