@@ -134,6 +134,32 @@ fn jsbench_url_renders_react_ui() {
 }
 
 #[test]
+fn pretty_flag_indents_output() {
+    cmd()
+        .arg("--pretty")
+        .write_stdin("<html><body><div><p>hello</p></div></body></html>")
+        .assert()
+        .success()
+        // Block elements each start on their own indented line.
+        .stdout(predicate::str::contains("\n  <body>"))
+        .stdout(predicate::str::contains("\n    <div>"))
+        .stdout(predicate::str::contains("\n      <p>"))
+        // Inline content stays on the same line as the text.
+        .stdout(predicate::str::contains("hello"));
+}
+
+#[test]
+fn pretty_flag_script_content_verbatim() {
+    // '<' inside a <script> body must not be parsed as a tag start.
+    cmd()
+        .arg("--pretty")
+        .write_stdin("<html><body><script>var x = 1 < 2;</script></body></html>")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("var x = 1 < 2;"));
+}
+
+#[test]
 fn invalid_header_format_fails() {
     cmd()
         .args(["-H", "no-colon-here"])

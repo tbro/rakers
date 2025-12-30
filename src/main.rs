@@ -1,4 +1,4 @@
-use rakers::{HttpConfig, render};
+use rakers::{HttpConfig, pretty_print, render};
 
 use clap::Parser;
 use std::{
@@ -36,6 +36,10 @@ struct Cli {
     /// prerendering services deliver to search-engine bots.
     #[arg(long)]
     clean: bool,
+
+    /// Format the output HTML with two-space indentation for human readability.
+    #[arg(long)]
+    pretty: bool,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -93,7 +97,8 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let result = render(&input, is_js, page_url, &cfg, cli.clean)?;
+    let rendered = render(&input, is_js, page_url, &cfg, cli.clean)?;
+    let result = if cli.pretty { pretty_print(&rendered) } else { rendered };
 
     match &cli.output {
         Some(path) => fs::write(path, &result)?,

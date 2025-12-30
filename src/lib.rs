@@ -4,7 +4,10 @@
 //! then serializes the post-execution DOM back to HTML.
 
 mod dom;
+mod pretty;
 mod runtime;
+
+pub use pretty::pretty_print;
 
 /// HTTP options applied to every outbound request made by rakers.
 #[derive(Default)]
