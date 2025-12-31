@@ -1,4 +1,4 @@
-use rakers::{HttpConfig, pretty_print, render, to_json};
+use rakers::{HttpConfig, diff_html, pretty_print, render, to_json};
 
 use clap::Parser;
 use std::{
@@ -45,6 +45,11 @@ struct Cli {
     /// instead of bare HTML — useful for scripting and size comparisons.
     #[arg(long)]
     json: bool,
+
+    /// Show a unified diff of raw vs rendered HTML instead of the full output.
+    /// Both sides are pretty-printed before diffing for a readable result.
+    #[arg(long)]
+    diff: bool,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -103,8 +108,12 @@ fn main() -> anyhow::Result<()> {
     };
 
     let rendered = render(&input, is_js, page_url, &cfg, cli.clean)?;
-    let html = if cli.pretty { pretty_print(&rendered) } else { rendered };
-    let result = if cli.json { to_json(input.len(), &html) } else { html };
+    let result = if cli.diff {
+        diff_html(&input, &rendered)
+    } else {
+        let html = if cli.pretty { pretty_print(&rendered) } else { rendered };
+        if cli.json { to_json(input.len(), &html) } else { html }
+    };
 
     match &cli.output {
         Some(path) => fs::write(path, &result)?,

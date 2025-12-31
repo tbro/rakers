@@ -193,6 +193,22 @@ fn json_and_pretty_combined() {
 }
 
 #[test]
+fn diff_flag_shows_unified_diff() {
+    let out = cmd()
+        .arg("--diff")
+        .write_stdin(r#"<html><body><script>document.body.innerHTML="<h1>rendered</h1>"</script></body></html>"#)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8(out).unwrap();
+    assert!(s.contains("---"),      "missing --- header");
+    assert!(s.contains("+++"),      "missing +++ header");
+    assert!(s.contains("rendered"), "rendered content absent from diff");
+}
+
+#[test]
 fn invalid_header_format_fails() {
     cmd()
         .args(["-H", "no-colon-here"])

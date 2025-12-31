@@ -10,6 +10,7 @@ rquickjs = ["dep:rquickjs"]
 
 [dependencies]
 anyhow = "1"
+similar = "2"
 ureq = "2"
 url = "2"
 clap = { version = "4", features = ["derive"] }

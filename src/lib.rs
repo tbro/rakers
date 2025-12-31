@@ -3,10 +3,12 @@
 //! Parses HTML, collects and executes scripts in a sandboxed JS context,
 //! then serializes the post-execution DOM back to HTML.
 
+mod diff;
 mod dom;
 mod pretty;
 mod runtime;
 
+pub use diff::diff_html;
 pub use pretty::pretty_print;
 
 /// Serialize render results as a JSON object with three fields:
