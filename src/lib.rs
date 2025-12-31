@@ -9,6 +9,35 @@ mod runtime;
 
 pub use pretty::pretty_print;
 
+/// Serialize render results as a JSON object with three fields:
+/// `raw_bytes`, `rendered_bytes`, and `html`.
+///
+/// The `html` string is JSON-escaped; no external dependency is required.
+pub fn to_json(raw_bytes: usize, html: &str) -> String {
+    format!(
+        "{{\n  \"raw_bytes\": {},\n  \"rendered_bytes\": {},\n  \"html\": \"{}\"\n}}\n",
+        raw_bytes,
+        html.len(),
+        json_escape(html)
+    )
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"'  => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c    => out.push(c),
+        }
+    }
+    out
+}
+
 /// HTTP options applied to every outbound request made by rakers.
 #[derive(Default)]
 pub struct HttpConfig {
@@ -497,6 +526,21 @@ mod tests {
         assert!(!out.contains("<noscript"),    "noscript tags removed");
         assert!( out.contains("<p>JS required</p>"), "noscript content preserved");
         assert!( out.contains("<h1>Hello</h1>"),     "regular content preserved");
+    }
+
+    #[test]
+    fn to_json_fields() {
+        let out = to_json(100, "<h1>hi</h1>");
+        assert!(out.contains("\"raw_bytes\": 100"), "raw_bytes field");
+        assert!(out.contains("\"rendered_bytes\": 11"), "rendered_bytes field");
+        assert!(out.contains("\"html\""), "html field present");
+        assert!(out.contains("<h1>hi</h1>"), "html content");
+    }
+
+    #[test]
+    fn to_json_escapes_special_chars() {
+        let out = to_json(0, "say \"hello\"\nline2\\end");
+        assert!(out.contains(r#"say \"hello\"\nline2\\end"#), "quotes, newline, backslash escaped: {out}");
     }
 
     #[test]

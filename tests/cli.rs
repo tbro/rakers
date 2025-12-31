@@ -160,6 +160,39 @@ fn pretty_flag_script_content_verbatim() {
 }
 
 #[test]
+fn json_flag_emits_json_object() {
+    let out = cmd()
+        .arg("--json")
+        .write_stdin(r#"<script>document.write("<p>hi</p>")</script>"#)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8(out).unwrap();
+    assert!(s.contains("\"raw_bytes\""),      "raw_bytes field absent");
+    assert!(s.contains("\"rendered_bytes\""), "rendered_bytes field absent");
+    assert!(s.contains("\"html\""),           "html field absent");
+    assert!(s.contains("<p>hi</p>"),          "rendered content absent");
+}
+
+#[test]
+fn json_and_pretty_combined() {
+    let out = cmd()
+        .args(["--json", "--pretty"])
+        .write_stdin("<html><body><div><p>test</p></div></body></html>")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let s = String::from_utf8(out).unwrap();
+    // Pretty-printed HTML is embedded inside the JSON html field (newlines escaped).
+    assert!(s.contains("\\n"), "pretty newlines should be JSON-escaped in html field");
+    assert!(s.contains("\"rendered_bytes\""), "rendered_bytes field absent");
+}
+
+#[test]
 fn invalid_header_format_fails() {
     cmd()
         .args(["-H", "no-colon-here"])

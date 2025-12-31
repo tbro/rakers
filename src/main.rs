@@ -1,4 +1,4 @@
-use rakers::{HttpConfig, pretty_print, render};
+use rakers::{HttpConfig, pretty_print, render, to_json};
 
 use clap::Parser;
 use std::{
@@ -40,6 +40,11 @@ struct Cli {
     /// Format the output HTML with two-space indentation for human readability.
     #[arg(long)]
     pretty: bool,
+
+    /// Emit a JSON object with raw_bytes, rendered_bytes, and html fields
+    /// instead of bare HTML — useful for scripting and size comparisons.
+    #[arg(long)]
+    json: bool,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -98,7 +103,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     let rendered = render(&input, is_js, page_url, &cfg, cli.clean)?;
-    let result = if cli.pretty { pretty_print(&rendered) } else { rendered };
+    let html = if cli.pretty { pretty_print(&rendered) } else { rendered };
+    let result = if cli.json { to_json(input.len(), &html) } else { html };
 
     match &cli.output {
         Some(path) => fs::write(path, &result)?,
