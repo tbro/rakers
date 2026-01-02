@@ -531,6 +531,24 @@ mod tests {
     }
 
     #[test]
+    fn script_timeout_is_non_fatal() {
+        // An infinite loop must be interrupted; the next script must still run.
+        let rt = runtime::JsRuntime::with_timeout(std::time::Duration::from_millis(100));
+        rt.execute(
+            &[
+                "while(true){}".to_owned(),
+                "document.write('<p>survived</p>');".to_owned(),
+            ],
+            None,
+        )
+        .unwrap();
+        assert!(
+            rt.written_html().contains("<p>survived</p>"),
+            "second script must run after timeout interrupts the first"
+        );
+    }
+
+    #[test]
     fn to_json_fields() {
         let out = to_json(100, "<h1>hi</h1>");
         assert!(out.contains("\"raw_bytes\": 100"), "raw_bytes field");

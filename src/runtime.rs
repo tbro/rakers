@@ -218,12 +218,17 @@ pub use boa_rt::JsRuntime;
 #[cfg(feature = "rquickjs")]
 mod quickjs_rt {
     use std::cell::RefCell;
+    use std::time::{Duration, Instant};
 
     use anyhow::anyhow;
     use rquickjs::{
         Context, Ctx, Function, Module, Object, Runtime, Value, context::EvalOptions,
         loader::{Loader, Resolver},
     };
+
+    // Per-script wall-clock timeout.  Scripts that run longer are interrupted and
+    // reported as [js error] so the render pipeline can continue with the next script.
+    const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 
     struct StubModuleSystem;
 
@@ -240,21 +245,38 @@ mod quickjs_rt {
     }
 
     thread_local! {
-        static WRITTEN:         RefCell<String>      = const { RefCell::new(String::new()) };
-        static LOGGED:          RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-        static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
+        static WRITTEN:         RefCell<String>           = const { RefCell::new(String::new()) };
+        static LOGGED:          RefCell<Vec<String>>      = const { RefCell::new(Vec::new()) };
+        static BODY_INNER_HTML: RefCell<String>           = const { RefCell::new(String::new()) };
+        // Deadline for the currently-executing script; None means no limit active.
+        static SCRIPT_DEADLINE: RefCell<Option<Instant>>  = RefCell::new(None);
+    }
+
+    fn set_deadline(timeout: Duration) {
+        SCRIPT_DEADLINE.with(|d| *d.borrow_mut() = Some(Instant::now() + timeout));
+    }
+
+    fn clear_deadline() {
+        SCRIPT_DEADLINE.with(|d| *d.borrow_mut() = None);
     }
 
     /// A sandboxed JavaScript execution context backed by QuickJS (via rquickjs).
-    pub struct JsRuntime;
+    pub struct JsRuntime {
+        timeout: Duration,
+    }
 
     impl JsRuntime {
-        /// Create a new runtime, clearing any leftover thread-local state from a previous run.
+        /// Create a new runtime with the default 30-second per-script timeout.
         pub fn new() -> Self {
+            Self::with_timeout(SCRIPT_TIMEOUT)
+        }
+
+        /// Create a new runtime with a custom per-script timeout (useful in tests).
+        pub fn with_timeout(timeout: Duration) -> Self {
             WRITTEN.with(|w| w.borrow_mut().clear());
             LOGGED.with(|l| l.borrow_mut().clear());
             BODY_INNER_HTML.with(|b| b.borrow_mut().clear());
-            JsRuntime
+            JsRuntime { timeout }
         }
 
         /// Evaluate the browser bootstrap and then each script in `scripts` in order.
@@ -266,6 +288,21 @@ mod quickjs_rt {
         pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
             let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
             rt.set_loader(StubModuleSystem, StubModuleSystem);
+
+            // Check the per-script deadline every 10 000 opcodes to keep overhead near zero.
+            rt.set_interrupt_handler(Some(Box::new({
+                let mut counter = 0u32;
+                move || {
+                    counter = counter.wrapping_add(1);
+                    if counter % 10_000 != 0 {
+                        return false;
+                    }
+                    SCRIPT_DEADLINE.with(|d| {
+                        d.borrow().map_or(false, |dl| Instant::now() > dl)
+                    })
+                }
+            })));
+
             let ctx = Context::full(&rt).map_err(|e| anyhow!("quickjs context: {:?}", e))?;
 
             ctx.with(|ctx| -> anyhow::Result<()> {
@@ -283,7 +320,10 @@ mod quickjs_rt {
                     .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
 
                 for script in scripts {
-                    if ctx.eval_with_options::<Value, _>(script.as_str(), sloppy()).is_err() {
+                    set_deadline(self.timeout);
+                    let result = ctx.eval_with_options::<Value, _>(script.as_str(), sloppy());
+                    clear_deadline();
+                    if result.is_err() {
                         let exc = ctx.catch();
                         let msg = exc
                             .as_exception()
@@ -293,11 +333,13 @@ mod quickjs_rt {
                     }
                 }
 
+                set_deadline(self.timeout);
                 let body_html: String = ctx
                     .eval_with_options::<Value, _>(super::READBACK_JS, sloppy())
                     .ok()
                     .and_then(|v| v.as_string().and_then(|s| s.to_string().ok()))
                     .unwrap_or_default();
+                clear_deadline();
 
                 let body_html = match body_html.as_str() {
                     "undefined" | "null" | "" => String::new(),
