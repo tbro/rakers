@@ -46,6 +46,11 @@ struct Cli {
     #[arg(long)]
     json: bool,
 
+    /// Limit the number of remote <script src> fetches.
+    /// Inline scripts are not counted.  Default: unlimited.
+    #[arg(long, value_name = "N")]
+    max_scripts: Option<usize>,
+
     /// Show a unified diff of raw vs rendered HTML instead of the full output.
     /// Both sides are pretty-printed before diffing for a readable result.
     #[arg(long)]
@@ -107,7 +112,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let rendered = render(&input, is_js, page_url, &cfg, cli.clean)?;
+    let rendered = render(&input, is_js, page_url, &cfg, cli.clean, cli.max_scripts)?;
     let result = if cli.diff {
         diff_html(&input, &rendered)
     } else {

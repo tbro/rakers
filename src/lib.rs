@@ -154,24 +154,35 @@ fn single_reexport_target(src: &str) -> Option<&str> {
 
 /// Resolve and fetch all script sources, returning a list of executable JS strings.
 ///
-/// Inline scripts are returned as-is. External scripts are resolved against `page_url`
-/// and fetched; any that fail or are skipped (e.g. ES module files) are omitted.
+/// Inline scripts are returned as-is and do not count toward `max_remote`.
+/// External scripts are resolved and fetched up to `max_remote` times; any
+/// beyond the cap are skipped with a `[skip]` message.
 fn load_scripts(
     sources: Vec<dom::ScriptSource>,
     page_url: Option<&str>,
     cfg: &HttpConfig,
+    max_remote: Option<usize>,
 ) -> Vec<String> {
-    sources
-        .into_iter()
-        .filter_map(|s| match s {
-            dom::ScriptSource::Inline(code) => Some(code),
+    let mut remote_fetched = 0usize;
+    let mut result = Vec::new();
+    for s in sources {
+        match s {
+            dom::ScriptSource::Inline(code) => result.push(code),
             dom::ScriptSource::External(src) => {
-                let url = resolve_url(&src, page_url)?;
+                if max_remote.is_some_and(|max| remote_fetched >= max) {
+                    eprintln!("[skip] --max-scripts limit reached, skipping {src}");
+                    continue;
+                }
+                let Some(url) = resolve_url(&src, page_url) else { continue };
                 eprintln!("[fetch] {url}");
-                fetch_script(&url, cfg)
+                if let Some(code) = fetch_script(&url, cfg) {
+                    remote_fetched += 1;
+                    result.push(code);
+                }
             }
-        })
-        .collect()
+        }
+    }
+    result
 }
 
 /// Parse `input`, execute its scripts, and return the rendered HTML.
@@ -192,6 +203,7 @@ pub fn render(
     page_url: Option<&str>,
     cfg: &HttpConfig,
     clean: bool,
+    max_scripts: Option<usize>,
 ) -> anyhow::Result<String> {
     let html = if is_js {
         format!("<!DOCTYPE html><html><head></head><body><script>{input}</script></body></html>")
@@ -200,7 +212,7 @@ pub fn render(
     };
 
     let doc = dom::parse(&html);
-    let scripts = load_scripts(doc.extract_scripts(), page_url, cfg);
+    let scripts = load_scripts(doc.extract_scripts(), page_url, cfg, max_scripts);
 
     let rt = runtime::JsRuntime::new();
     rt.execute(&scripts, page_url)?;
@@ -315,7 +327,7 @@ fn raw_body_content_len(html: &str) -> usize {
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
 pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
     let body = cfg.apply(ureq::get(url)).call()?.into_string()?;
-    render(&body, false, Some(url), cfg, clean)
+    render(&body, false, Some(url), cfg, clean, None)
 }
 
 #[cfg(test)]
@@ -323,7 +335,7 @@ mod tests {
     use super::*;
 
     fn render_simple(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
-        render(input, is_js, page_url, &HttpConfig::default(), false)
+        render(input, is_js, page_url, &HttpConfig::default(), false, None)
     }
 
     #[test]
@@ -520,7 +532,7 @@ mod tests {
             "<noscript><p>JS required</p></noscript>",
             "</body></html>",
         );
-        let out = render(html, false, None, &HttpConfig::default(), true).unwrap();
+        let out = render(html, false, None, &HttpConfig::default(), true, None).unwrap();
         assert!(!out.contains("<script"),      "script tags removed");
         assert!(!out.contains("modulepreload"),"modulepreload link removed");
         assert!(!out.contains(r#"as="script""#), "preload-script link removed");

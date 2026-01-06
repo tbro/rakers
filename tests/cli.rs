@@ -209,6 +209,27 @@ fn diff_flag_shows_unified_diff() {
 }
 
 #[test]
+fn max_scripts_skips_remote_fetches() {
+    // With --max-scripts 0, the remote script should be skipped (no [fetch] in stderr)
+    // but the inline script should still run.
+    let out = cmd()
+        .args(["--max-scripts", "0"])
+        .write_stdin(concat!(
+            r#"<html><head><script src="https://example.com/app.js"></script></head>"#,
+            r#"<body><script>document.write("<p>inline</p>")</script></body></html>"#,
+        ))
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stdout.contains("<p>inline</p>"), "inline script should still run");
+    assert!(!stderr.contains("[fetch]"),      "remote script should not be fetched");
+    assert!(stderr.contains("[skip]"),        "skip message should appear in stderr");
+}
+
+#[test]
 fn invalid_header_format_fails() {
     cmd()
         .args(["-H", "no-colon-here"])
