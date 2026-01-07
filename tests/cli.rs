@@ -230,6 +230,25 @@ fn max_scripts_skips_remote_fetches() {
 }
 
 #[test]
+fn verbose_off_suppresses_console() {
+    cmd()
+        .write_stdin(r#"<script>console.log("should be hidden")</script>"#)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("[console]").not());
+}
+
+#[test]
+fn verbose_on_shows_console() {
+    cmd()
+        .arg("--verbose")
+        .write_stdin(r#"<script>console.log("should appear")</script>"#)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("[console] should appear"));
+}
+
+#[test]
 fn invalid_header_format_fails() {
     cmd()
         .args(["-H", "no-colon-here"])

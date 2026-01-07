@@ -1,4 +1,4 @@
-use rakers::{HttpConfig, diff_html, pretty_print, render, to_json};
+use rakers::{HttpConfig, diff_html, pretty_print, render, set_verbose, to_json};
 
 use clap::Parser;
 use std::{
@@ -55,6 +55,11 @@ struct Cli {
     /// Both sides are pretty-printed before diffing for a readable result.
     #[arg(long)]
     diff: bool,
+
+    /// Print informational messages to stderr: script fetches, skips, console output,
+    /// and module-shim activations.  By default these are suppressed.
+    #[arg(long)]
+    verbose: bool,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -99,6 +104,7 @@ fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    set_verbose(cli.verbose);
     let cfg = http_config_from_cli(&cli)?;
 
     let page_url = cli.input.as_deref().filter(|s| is_url(s));
