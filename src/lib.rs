@@ -11,6 +11,26 @@ mod runtime;
 pub use diff::diff_html;
 pub use pretty::pretty_print;
 
+use std::cell::Cell;
+use std::time::Duration;
+
+thread_local! {
+    static VERBOSE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Enable or disable verbose stderr output for the current thread.
+///
+/// When `false` (default) only `[js error]` and `[fetch error]` are printed.
+/// When `true` all messages — `[fetch]`, `[skip]`, `[console]`, `[module-shim]`
+/// — are also printed.
+pub fn set_verbose(v: bool) {
+    VERBOSE.with(|c| c.set(v));
+}
+
+fn is_verbose() -> bool {
+    VERBOSE.with(|c| c.get())
+}
+
 /// Serialize render results as a JSON object with three fields:
 /// `raw_bytes`, `rendered_bytes`, and `html`.
 ///
@@ -105,11 +125,11 @@ fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
         // just loads one self-contained bundle.  Follow that one hop.
         if let Some(target) = single_reexport_target(trimmed) {
             if let Some(resolved) = resolve_url(target, Some(url)) {
-                eprintln!("[module-shim] {url} → {resolved}");
+                if is_verbose() { eprintln!("[module-shim] {url} → {resolved}"); }
                 return fetch_script(&resolved, cfg);
             }
         }
-        eprintln!("[skip] {url}: ES module syntax requires a module loader");
+        if is_verbose() { eprintln!("[skip] {url}: ES module syntax requires a module loader"); }
         return None;
     }
     Some(body)
@@ -170,11 +190,11 @@ fn load_scripts(
             dom::ScriptSource::Inline(code) => result.push(code),
             dom::ScriptSource::External(src) => {
                 if max_remote.is_some_and(|max| remote_fetched >= max) {
-                    eprintln!("[skip] --max-scripts limit reached, skipping {src}");
+                    if is_verbose() { eprintln!("[skip] --max-scripts limit reached, skipping {src}"); }
                     continue;
                 }
                 let Some(url) = resolve_url(&src, page_url) else { continue };
-                eprintln!("[fetch] {url}");
+                if is_verbose() { eprintln!("[fetch] {url}"); }
                 if let Some(code) = fetch_script(&url, cfg) {
                     remote_fetched += 1;
                     result.push(code);
@@ -204,6 +224,7 @@ pub fn render(
     cfg: &HttpConfig,
     clean: bool,
     max_scripts: Option<usize>,
+    script_timeout: Option<Duration>,
 ) -> anyhow::Result<String> {
     let html = if is_js {
         format!("<!DOCTYPE html><html><head></head><body><script>{input}</script></body></html>")
@@ -214,11 +235,14 @@ pub fn render(
     let doc = dom::parse(&html);
     let scripts = load_scripts(doc.extract_scripts(), page_url, cfg, max_scripts);
 
-    let rt = runtime::JsRuntime::new();
+    let rt = match script_timeout {
+        Some(t) => runtime::JsRuntime::with_timeout(t),
+        None    => runtime::JsRuntime::new(),
+    };
     rt.execute(&scripts, page_url)?;
 
     for msg in rt.logged_messages() {
-        eprintln!("[console] {msg}");
+        if is_verbose() { eprintln!("[console] {msg}"); }
     }
 
     let body_html = rt.body_inner_html();
@@ -327,7 +351,7 @@ fn raw_body_content_len(html: &str) -> usize {
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
 pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
     let body = cfg.apply(ureq::get(url)).call()?.into_string()?;
-    render(&body, false, Some(url), cfg, clean, None)
+    render(&body, false, Some(url), cfg, clean, None, None)
 }
 
 #[cfg(test)]
@@ -335,7 +359,7 @@ mod tests {
     use super::*;
 
     fn render_simple(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
-        render(input, is_js, page_url, &HttpConfig::default(), false, None)
+        render(input, is_js, page_url, &HttpConfig::default(), false, None, None)
     }
 
     #[test]
@@ -532,7 +556,7 @@ mod tests {
             "<noscript><p>JS required</p></noscript>",
             "</body></html>",
         );
-        let out = render(html, false, None, &HttpConfig::default(), true, None).unwrap();
+        let out = render(html, false, None, &HttpConfig::default(), true, None, None).unwrap();
         assert!(!out.contains("<script"),      "script tags removed");
         assert!(!out.contains("modulepreload"),"modulepreload link removed");
         assert!(!out.contains(r#"as="script""#), "preload-script link removed");

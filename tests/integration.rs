@@ -22,6 +22,7 @@ fn todomvc_react_spa_renders_ui() {
         &HttpConfig::default(),
         false,
         None,
+        None,
     )
     .unwrap();
 
@@ -55,6 +56,7 @@ fn jsbench_react_spa_renders_ui() {
         Some("https://jsbench.me"),
         &HttpConfig::default(),
         false,
+        None,
         None,
     )
     .unwrap();
@@ -94,6 +96,7 @@ fn reactrouter_v5_homepage_renders() {
         Some("https://v5.reactrouter.com/"),
         &HttpConfig::default(),
         false,
+        None,
         None,
     )
     .unwrap();
@@ -139,6 +142,7 @@ fn babylonbee_rocket_loader_pipeline_intact() {
         &HttpConfig::default(),
         false,
         None,
+        None,
     )
     .unwrap();
 
@@ -171,7 +175,7 @@ fn custom_user_agent_is_sent() {
         .unwrap()
         .into_string()
         .unwrap();
-    let out = render(&raw, false, Some("https://httpbin.org/user-agent"), &cfg, false, None).unwrap();
+    let out = render(&raw, false, Some("https://httpbin.org/user-agent"), &cfg, false, None, None).unwrap();
 
     assert!(
         out.contains("rakers-test/1.0"),

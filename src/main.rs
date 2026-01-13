@@ -1,5 +1,7 @@
 use rakers::{HttpConfig, diff_html, pretty_print, render, set_verbose, to_json};
 
+use std::time::Duration;
+
 use clap::Parser;
 use std::{
     fs,
@@ -60,6 +62,11 @@ struct Cli {
     /// and module-shim activations.  By default these are suppressed.
     #[arg(long)]
     verbose: bool,
+
+    /// Per-script wall-clock timeout in seconds.
+    /// Scripts that exceed this limit are interrupted (non-fatal).  Default: 30.
+    #[arg(long, value_name = "SECS")]
+    timeout: Option<u64>,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -118,7 +125,8 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let rendered = render(&input, is_js, page_url, &cfg, cli.clean, cli.max_scripts)?;
+    let script_timeout = cli.timeout.map(Duration::from_secs);
+    let rendered = render(&input, is_js, page_url, &cfg, cli.clean, cli.max_scripts, script_timeout)?;
     let result = if cli.diff {
         diff_html(&input, &rendered)
     } else {

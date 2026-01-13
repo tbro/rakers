@@ -32,6 +32,7 @@ fn static_html_passthrough() {
 #[test]
 fn console_log_goes_to_stderr() {
     cmd()
+        .arg("--verbose")
         .write_stdin(r#"<script>console.log("test message")</script>"#)
         .assert()
         .success()
@@ -213,7 +214,7 @@ fn max_scripts_skips_remote_fetches() {
     // With --max-scripts 0, the remote script should be skipped (no [fetch] in stderr)
     // but the inline script should still run.
     let out = cmd()
-        .args(["--max-scripts", "0"])
+        .args(["--max-scripts", "0", "--verbose"])
         .write_stdin(concat!(
             r#"<html><head><script src="https://example.com/app.js"></script></head>"#,
             r#"<body><script>document.write("<p>inline</p>")</script></body></html>"#,
@@ -227,6 +228,24 @@ fn max_scripts_skips_remote_fetches() {
     assert!(stdout.contains("<p>inline</p>"), "inline script should still run");
     assert!(!stderr.contains("[fetch]"),      "remote script should not be fetched");
     assert!(stderr.contains("[skip]"),        "skip message should appear in stderr");
+}
+
+#[test]
+fn timeout_kills_infinite_loop() {
+    // An infinite loop would hang forever without a timeout; --timeout 1 should
+    // interrupt it and still exit 0 (timeout is non-fatal, like JS errors).
+    cmd()
+        .args(["--timeout", "1"])
+        .write_stdin(concat!(
+            r#"<html><body>"#,
+            r#"<script>while(true){}</script>"#,
+            r#"<script>document.write("<p>after</p>")</script>"#,
+            r#"</body></html>"#,
+        ))
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<p>after</p>"));
 }
 
 #[test]
