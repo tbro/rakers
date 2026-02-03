@@ -600,6 +600,47 @@ mod tests {
     }
 
     #[test]
+    fn location_pathname_reflects_page_url() {
+        let js = r#"document.write(window.location.pathname)"#;
+        let out = render(js, true, Some("https://example.com/foo/bar"), &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("/foo/bar"), "pathname should be /foo/bar, got: {out}");
+    }
+
+    #[test]
+    fn location_fields_parsed_from_url() {
+        let js = concat!(
+            "document.write(window.location.protocol + '|');",
+            "document.write(window.location.hostname + '|');",
+            "document.write(window.location.pathname + '|');",
+            "document.write(window.location.search + '|');",
+            "document.write(window.location.hash);",
+        );
+        let out = render(js, true, Some("https://example.com/path?q=1#sec"), &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("https:|"),   "protocol wrong: {out}");
+        assert!(out.contains("example.com|"), "hostname wrong: {out}");
+        assert!(out.contains("/path|"),    "pathname wrong: {out}");
+        assert!(out.contains("?q=1|"),     "search wrong: {out}");
+        assert!(out.contains("#sec"),      "hash wrong: {out}");
+    }
+
+    #[test]
+    fn location_defaults_when_no_url() {
+        let js = r#"document.write(window.location.href)"#;
+        let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("about:blank"), "href should be about:blank when no URL given, got: {out}");
+    }
+
+    #[test]
+    fn history_state_updated_by_push() {
+        let js = concat!(
+            "window.history.pushState({page:1}, '');",
+            "document.write(JSON.stringify(window.history.state));",
+        );
+        let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains(r#""page""#) && out.contains('1'.to_string().as_str()), "history.state should reflect pushed state, got: {out}");
+    }
+
+    #[test]
     fn single_reexport_target_detects_shim() {
         assert_eq!(single_reexport_target("import './bundle.js'"), Some("./bundle.js"));
         assert_eq!(single_reexport_target("import \"../dist/app.js\";"), Some("../dist/app.js"));

@@ -278,12 +278,16 @@ document.currentScript = {
 
 // ─── window ──────────────────────────────────────────────────────────────────
 
-window.location = {
-    href: "__HREF__",
-    hostname: '', pathname: '/', search: '', hash: '', protocol: 'https:', port: '', origin: '',
-    assign: function() {}, replace: function() {}, reload: function() {},
-    toString: function() { return this.href; }
-};
+(function() {
+    var _u = _r_parse_url("__HREF__");
+    window.location = {
+        href:     _u.href,     protocol: _u.protocol, host:     _u.host,
+        hostname: _u.hostname, port:     _u.port,     pathname: _u.pathname,
+        search:   _u.search,   hash:     _u.hash,     origin:   _u.origin,
+        assign: function() {}, replace: function() {}, reload: function() {},
+        toString: function() { return this.href; }
+    };
+})();
 window.navigator = {
     userAgent: 'rakers/0.1.0', appName: 'rakers', appVersion: '0.1.0',
     language: 'en-US', languages: ['en-US', 'en'],
@@ -293,9 +297,10 @@ window.navigator = {
 };
 window.screen = {width:1920, height:1080, availWidth:1920, availHeight:1080, colorDepth:24};
 window.history = {
-    length: 1, scrollRestoration: 'auto',
-    pushState:    function() {}, replaceState: function() {},
-    back:         function() {}, forward:      function() {}, go: function() {}
+    length: 1, scrollRestoration: 'auto', state: null,
+    pushState:    function(s) { this.state = s || null; },
+    replaceState: function(s) { this.state = s || null; },
+    back: function() {}, forward: function() {}, go: function() {}
 };
 window.performance = {
     now:               function() { return 0; },
