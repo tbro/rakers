@@ -342,14 +342,46 @@ window.prompt  = function(msg, def) { return null; };
 window.open    = function() { return null; };
 window.close   = function() {};
 window.postMessage     = function() {};
-window.fetch           = function() { return Promise.reject(new Error('fetch is not available in rakers')); };
+window.fetch = function(url) {
+    var res = {
+        ok: true, status: 200, statusText: 'OK',
+        url: String(url || ''), redirected: false, type: 'basic',
+        headers: { get: function() { return null; }, has: function() { return false; },
+                   forEach: function() {}, entries: function() { return []; } },
+        json:        function() { return Promise.resolve(null); },
+        text:        function() { return Promise.resolve(''); },
+        blob:        function() { return Promise.resolve(new window.Blob()); },
+        arrayBuffer: function() { return Promise.resolve(null); },
+        clone:       function() { return this; }
+    };
+    return Promise.resolve(res);
+};
 window.XMLHttpRequest  = function() {
-    this.readyState=0; this.status=0; this.statusText=''; this.responseText=''; this.responseXML=null;
-    this.onreadystatechange=null; this.onload=null; this.onerror=null; this.onprogress=null;
-    this.open=function(){}; this.send=function(){}; this.abort=function(){};
-    this.setRequestHeader=function(){}; this.getResponseHeader=function(){return null;};
+    var self = this;
+    this.readyState=0; this.status=0; this.statusText='';
+    this.responseText=''; this.responseXML=null; this.response='';
+    this.responseType=''; this.withCredentials=false; this.timeout=0;
+    this.onreadystatechange=null; this.onload=null; this.onerror=null;
+    this.onprogress=null; this.ontimeout=null; this.onabort=null;
+    this.open=function(){};
+    this.send=function() {
+        _r_timers.push(function() {
+            self.readyState=4; self.status=200; self.statusText='OK';
+            if (typeof self.onreadystatechange==='function') try { self.onreadystatechange.call(self); } catch(e) {}
+            if (typeof self.onload==='function')             try { self.onload.call(self, {target:self}); } catch(e) {}
+        });
+    };
+    this.abort=function(){};
+    this.setRequestHeader=function(){};
+    this.getResponseHeader=function(){return null;};
     this.getAllResponseHeaders=function(){return '';};
-    this.addEventListener=function(){}; this.removeEventListener=function(){};
+    this.overrideMimeType=function(){};
+    this.addEventListener=function(t,fn){
+        if (t==='load') self.onload=fn;
+        else if (t==='error') self.onerror=fn;
+        else if (t==='readystatechange') self.onreadystatechange=fn;
+    };
+    this.removeEventListener=function(){};
 };
 window.FormData = function() {
     this.append=function(){}; this.delete=function(){};

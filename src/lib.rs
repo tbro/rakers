@@ -600,6 +600,52 @@ mod tests {
     }
 
     #[test]
+    fn fetch_stub_resolves_then_chain() {
+        // fetch() must return a resolved Promise so .then() chains fire, not crash.
+        let js = concat!(
+            "window.fetch('/api/data')",
+            ".then(function(r){ return r.text(); })",
+            ".then(function(t){ document.write('<p>fetch-ok</p>'); });",
+        );
+        let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("<p>fetch-ok</p>"), "fetch .then() chain must fire, got: {out}");
+    }
+
+    #[test]
+    fn fetch_stub_json_resolves() {
+        let js = concat!(
+            "window.fetch('/api').then(function(r){ return r.json(); })",
+            ".then(function(d){ document.write('<p>json-ok</p>'); });",
+        );
+        let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("<p>json-ok</p>"), "fetch.json() chain must fire, got: {out}");
+    }
+
+    #[test]
+    fn xhr_stub_fires_onload() {
+        let js = concat!(
+            "var xhr = new XMLHttpRequest();",
+            "xhr.open('GET', '/api/data');",
+            "xhr.onload = function() { document.write('<p>xhr-ok</p>'); };",
+            "xhr.send();",
+        );
+        let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("<p>xhr-ok</p>"), "XHR onload must fire, got: {out}");
+    }
+
+    #[test]
+    fn xhr_stub_fires_addeventlistener_load() {
+        let js = concat!(
+            "var xhr = new XMLHttpRequest();",
+            "xhr.open('GET', '/api');",
+            "xhr.addEventListener('load', function() { document.write('<p>xhr-addev-ok</p>'); });",
+            "xhr.send();",
+        );
+        let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
+        assert!(out.contains("<p>xhr-addev-ok</p>"), "XHR addEventListener('load') must fire, got: {out}");
+    }
+
+    #[test]
     fn location_pathname_reflects_page_url() {
         let js = r#"document.write(window.location.pathname)"#;
         let out = render(js, true, Some("https://example.com/foo/bar"), &HttpConfig::default(), false, None, None).unwrap();
