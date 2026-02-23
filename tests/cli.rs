@@ -268,6 +268,52 @@ fn verbose_on_shows_console() {
 }
 
 #[test]
+fn selector_filters_rendered_output() {
+    cmd()
+        .args(["--selector", "h1"])
+        .write_stdin("<html><body><h1>Title</h1><p>Other</p></body></html>")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<h1>Title</h1>"))
+        .stdout(predicate::str::contains("<p>Other</p>").not());
+}
+
+#[test]
+fn selector_with_js_rendered_content() {
+    cmd()
+        .args(["--selector", "#app"])
+        .write_stdin(concat!(
+            r#"<html><body><div id="app"></div>"#,
+            r#"<script>document.getElementById('app').innerHTML='<p>rendered</p>';</script>"#,
+            r#"</body></html>"#,
+        ))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<p>rendered</p>"))
+        .stdout(predicate::str::contains("<script>").not());
+}
+
+#[test]
+fn selector_empty_when_no_match() {
+    cmd()
+        .args(["--selector", "h2"])
+        .write_stdin("<html><body><h1>Title</h1></body></html>")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn invalid_selector_fails() {
+    cmd()
+        .args(["--selector", "##bad"])
+        .write_stdin("<html></html>")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid selector"));
+}
+
+#[test]
 fn invalid_header_format_fails() {
     cmd()
         .args(["-H", "no-colon-here"])

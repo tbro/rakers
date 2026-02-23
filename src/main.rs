@@ -1,4 +1,4 @@
-use rakers::{HttpConfig, diff_html, pretty_print, render, set_verbose, to_json};
+use rakers::{HttpConfig, diff_html, pretty_print, render, select_html, set_verbose, to_json};
 
 use std::time::Duration;
 
@@ -67,6 +67,11 @@ struct Cli {
     /// Scripts that exceed this limit are interrupted (non-fatal).  Default: 30.
     #[arg(long, value_name = "SECS")]
     timeout: Option<u64>,
+
+    /// Filter rendered output to elements matching SELECTOR (CSS selector syntax).
+    /// All matching elements are printed, each separated by a newline.
+    #[arg(long, value_name = "SELECTOR")]
+    selector: Option<String>,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -127,6 +132,10 @@ fn main() -> anyhow::Result<()> {
 
     let script_timeout = cli.timeout.map(Duration::from_secs);
     let rendered = render(&input, is_js, page_url, &cfg, cli.clean, cli.max_scripts, script_timeout)?;
+    let rendered = match &cli.selector {
+        Some(sel) => select_html(&rendered, sel)?,
+        None => rendered,
+    };
     let result = if cli.diff {
         diff_html(&input, &rendered)
     } else {

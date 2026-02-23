@@ -7,9 +7,11 @@ mod diff;
 mod dom;
 mod pretty;
 mod runtime;
+mod select;
 
 pub use diff::diff_html;
 pub use pretty::pretty_print;
+pub use select::select_html;
 
 use std::cell::Cell;
 use std::time::Duration;
