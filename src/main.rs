@@ -63,10 +63,16 @@ struct Cli {
     #[arg(long)]
     verbose: bool,
 
-    /// Per-script wall-clock timeout in seconds.
+    /// Per-script wall-clock timeout in seconds (fractions allowed, e.g. 0.5).
     /// Scripts that exceed this limit are interrupted (non-fatal).  Default: 30.
-    #[arg(long, value_name = "SECS")]
-    timeout: Option<u64>,
+    /// Must be greater than zero; use --no-timeout to remove the cap entirely.
+    #[arg(long, value_name = "SECS", conflicts_with = "no_timeout")]
+    timeout: Option<f64>,
+
+    /// Remove the per-script timeout entirely.  Use with care — a hung script
+    /// will block the process indefinitely.
+    #[arg(long)]
+    no_timeout: bool,
 
     /// Filter rendered output to elements matching SELECTOR (CSS selector syntax).
     /// All matching elements are printed, each separated by a newline.
@@ -130,7 +136,16 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let script_timeout = cli.timeout.map(Duration::from_secs);
+    let script_timeout = if cli.no_timeout {
+        None
+    } else if let Some(secs) = cli.timeout {
+        if secs <= 0.0 {
+            anyhow::bail!("--timeout must be greater than zero (use --no-timeout to remove the cap)");
+        }
+        Some(Duration::from_secs_f64(secs))
+    } else {
+        Some(Duration::from_secs(30))
+    };
     let rendered = render(&input, is_js, page_url, &cfg, cli.clean, cli.max_scripts, script_timeout)?;
     let rendered = match &cli.selector {
         Some(sel) => select_html(&rendered, sel)?,

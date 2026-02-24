@@ -232,8 +232,6 @@ fn max_scripts_skips_remote_fetches() {
 
 #[test]
 fn timeout_kills_infinite_loop() {
-    // An infinite loop would hang forever without a timeout; --timeout 1 should
-    // interrupt it and still exit 0 (timeout is non-fatal, like JS errors).
     cmd()
         .args(["--timeout", "1"])
         .write_stdin(concat!(
@@ -246,6 +244,51 @@ fn timeout_kills_infinite_loop() {
         .assert()
         .success()
         .stdout(predicate::str::contains("<p>after</p>"));
+}
+
+#[test]
+fn timeout_subsecond_kills_loop() {
+    cmd()
+        .args(["--timeout", "0.5"])
+        .write_stdin(concat!(
+            r#"<html><body>"#,
+            r#"<script>while(true){}</script>"#,
+            r#"<script>document.write("<p>sub</p>")</script>"#,
+            r#"</body></html>"#,
+        ))
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<p>sub</p>"));
+}
+
+#[test]
+fn timeout_zero_is_rejected() {
+    cmd()
+        .args(["--timeout", "0"])
+        .write_stdin("<html></html>")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("greater than zero"));
+}
+
+#[test]
+fn no_timeout_flag_accepted() {
+    cmd()
+        .arg("--no-timeout")
+        .write_stdin(r#"<script>document.write("<p>ok</p>")</script>"#)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<p>ok</p>"));
+}
+
+#[test]
+fn timeout_and_no_timeout_conflict() {
+    cmd()
+        .args(["--timeout", "5", "--no-timeout"])
+        .write_stdin("<html></html>")
+        .assert()
+        .failure();
 }
 
 #[test]

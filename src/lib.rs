@@ -239,7 +239,7 @@ pub fn render(
 
     let rt = match script_timeout {
         Some(t) => runtime::JsRuntime::with_timeout(t),
-        None    => runtime::JsRuntime::new(),
+        None    => runtime::JsRuntime::without_timeout(),
     };
     rt.execute(&scripts, page_url)?;
 
@@ -353,7 +353,7 @@ fn raw_body_content_len(html: &str) -> usize {
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
 pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
     let body = cfg.apply(ureq::get(url)).call()?.into_string()?;
-    render(&body, false, Some(url), cfg, clean, None, None)
+    render(&body, false, Some(url), cfg, clean, None, Some(Duration::from_secs(30)))
 }
 
 #[cfg(test)]

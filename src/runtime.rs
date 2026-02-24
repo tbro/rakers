@@ -262,7 +262,7 @@ mod quickjs_rt {
 
     /// A sandboxed JavaScript execution context backed by QuickJS (via rquickjs).
     pub struct JsRuntime {
-        timeout: Duration,
+        timeout: Option<Duration>,
     }
 
     impl JsRuntime {
@@ -276,7 +276,15 @@ mod quickjs_rt {
             WRITTEN.with(|w| w.borrow_mut().clear());
             LOGGED.with(|l| l.borrow_mut().clear());
             BODY_INNER_HTML.with(|b| b.borrow_mut().clear());
-            JsRuntime { timeout }
+            JsRuntime { timeout: Some(timeout) }
+        }
+
+        /// Create a new runtime with no per-script timeout.
+        pub fn without_timeout() -> Self {
+            WRITTEN.with(|w| w.borrow_mut().clear());
+            LOGGED.with(|l| l.borrow_mut().clear());
+            BODY_INNER_HTML.with(|b| b.borrow_mut().clear());
+            JsRuntime { timeout: None }
         }
 
         /// Evaluate the browser bootstrap and then each script in `scripts` in order.
@@ -320,7 +328,7 @@ mod quickjs_rt {
                     .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
 
                 for script in scripts {
-                    set_deadline(self.timeout);
+                    if let Some(t) = self.timeout { set_deadline(t); }
                     let result = ctx.eval_with_options::<Value, _>(script.as_str(), sloppy());
                     clear_deadline();
                     if result.is_err() {
@@ -333,7 +341,7 @@ mod quickjs_rt {
                     }
                 }
 
-                set_deadline(self.timeout);
+                if let Some(t) = self.timeout { set_deadline(t); }
                 let body_html: String = ctx
                     .eval_with_options::<Value, _>(super::READBACK_JS, sloppy())
                     .ok()
