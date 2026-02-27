@@ -4,7 +4,7 @@ A lightweight, zero-dependency scraping tool for SSR sites and simple React
 SPAs, where startup latency (milliseconds vs. 1-2 seconds) and memory footprint
 (~10 MB vs. ~300 MB) matter more than compatibility breadth.
 
-`rackers` renders JavaScript into HTML. Give it an HTML file, a URL, or a bare JS script and it returns the post-execution HTML — including content rendered by React, Vue, and other JS frameworks.
+`rakers` renders JavaScript into HTML. Give it an HTML file, a URL, or a bare JS script and it returns the post-execution HTML — including content rendered by React, Vue, and other JS frameworks.
 
 Built on [html5ever](https://github.com/servo/html5ever) (Servo's HTML5 parser) with a choice of JS engine: [QuickJS](https://bellard.org/quickjs/) via [rquickjs](https://github.com/DelSkayn/rquickjs) (default) or [boa_engine](https://github.com/boa-dev/boa) (pure-Rust, no C compiler required).
 
@@ -47,6 +47,14 @@ rakers https://example.com -o rendered.html
 | `-A UA` | Set the `User-Agent` header for all HTTP requests |
 | `-H "Name: Value"` | Add a custom request header (repeatable) |
 | `--clean` | Strip `<script>` elements and unwrap `<noscript>` — see [Clean mode](#clean-mode) |
+| `--pretty` | Format output HTML with two-space indentation |
+| `--json` | Emit `{"raw_bytes":N,"rendered_bytes":N,"html":"..."}` instead of bare HTML |
+| `--diff` | Show a unified diff of raw vs rendered HTML (both sides are pretty-printed first) |
+| `--selector SELECTOR` | Filter output to elements matching a CSS selector; multiple matches are newline-separated |
+| `--max-scripts N` | Limit the number of remote `<script src>` fetches (inline scripts are not counted) |
+| `--timeout SECS` | Per-script wall-clock timeout in seconds; fractions allowed (e.g. `0.5`). Default: `30` |
+| `--no-timeout` | Remove the per-script timeout entirely (conflicts with `--timeout`) |
+| `--verbose` | Print informational messages to stderr: `[fetch]`, `[skip]`, `[console]`, `[module-shim]` |
 
 ## How it works
 
@@ -62,8 +70,50 @@ rakers https://example.com -o rendered.html
 
 `.js` files are automatically wrapped in a minimal HTML document before processing.
 
-`console.log`, `console.warn`, and `console.error` print to stderr with a `[console]` prefix.
+`console.log`, `console.warn`, and `console.error` print to stderr with a `[console]` prefix when `--verbose` is set.
 Script errors are non-fatal — execution continues with the next script.
+
+## Output modes
+
+### `--pretty`
+
+Pretty-print the rendered HTML with two-space indentation. Block elements each start on their own line; inline elements and their content stay together.
+
+```sh
+rakers --pretty https://example.com
+```
+
+### `--json`
+
+Emit a JSON object useful for scripting and size comparisons:
+
+```json
+{"raw_bytes":645,"rendered_bytes":4210,"html":"<html>..."}
+```
+
+`--json` and `--pretty` can be combined — the HTML field will contain pretty-printed, JSON-escaped HTML.
+
+### `--diff`
+
+Show a unified diff of the raw vs rendered HTML. Both sides are pretty-printed before diffing for a readable result:
+
+```sh
+rakers --diff https://example.com/spa
+```
+
+### `--selector`
+
+Extract specific elements from the rendered output using a CSS selector. All matching elements are printed, newline-separated:
+
+```sh
+# Extract just the article elements from a news site
+rakers --selector "article" https://example.com
+
+# Combine with --pretty for readable output
+rakers --selector "#root" --pretty https://example.com/spa
+```
+
+Returns an empty string (exit 0) when no elements match. Returns an error for an invalid selector.
 
 ## Clean mode
 
@@ -127,12 +177,16 @@ cargo test --test integration
 The following globals are stubbed so typical JS bundles run without errors:
 
 - **`document`** — `createElement`, `getElementById`, `querySelector`, `body`, `head`, `currentScript`, and the full DOM manipulation API (`appendChild`, `insertBefore`, `setAttribute`, `innerHTML`, etc.)
-- **`window`** — `location` (with `toString()`), `navigator`, `history`, `screen`, `performance`, `localStorage`, `sessionStorage`, `matchMedia`, `getComputedStyle`, and all standard event/observer constructors
+- **`window.location`** — all fields (`href`, `pathname`, `hostname`, `protocol`, `host`, `port`, `search`, `hash`, `origin`) are parsed from the page URL passed to rakers; `assign`, `replace`, and `reload` are no-ops
+- **`window.history`** — `pushState` and `replaceState` update `history.state`; navigation methods are no-ops
+- **`window`** — `navigator`, `screen`, `performance`, `localStorage`, `sessionStorage`, `matchMedia`, `getComputedStyle`, and all standard event/observer constructors
 - **`URL` / `URLSearchParams`** — relative URL resolution against the page URL; `searchParams` with full `get`/`set`/`has`
-- **`fetch` / `XMLHttpRequest`** — stubbed as no-ops (network requests from JS are not made)
+- **`fetch`** — returns `Promise.resolve(response)` with an empty 200 OK body; `.then()` chains run, apps don't crash, but no data is loaded
+- **`XMLHttpRequest`** — `send()` schedules `onload` / `onreadystatechange` callbacks with `status=200` and empty `responseText`; they fire during the deferred-callback flush pass
 - **`DOMException` / `customElements`** — Web Components registry and DOM exception constructor
 - **`process`** — Node.js-style globals for webpack/Vite bundler compatibility
 - **Timers** — `setTimeout`, `setInterval`, `requestAnimationFrame`, `queueMicrotask`, and `MessageChannel` callbacks are collected and flushed after scripts finish
+- **`import()`** — dynamic imports return `Promise.resolve({})` (a stub module); `.then()` chains run but no real module is loaded
 
 ## Comparison
 
