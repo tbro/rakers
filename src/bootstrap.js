@@ -50,7 +50,7 @@ function _r_parse_url(href, base) {
 function _r_el(tag) {
     tag = (tag || 'DIV').toUpperCase();
     var el = {
-        tagName: tag, nodeType: 1,
+        tagName: tag, nodeName: tag, nodeType: 1,
         id: '', className: '', name: '', type: '', value: '',
         href: '', src: '', alt: '', placeholder: '',
         // URL-derived properties (populated when href is set on anchor/link elements)
@@ -59,7 +59,11 @@ function _r_el(tag) {
         // ownerDocument — lazily returns the global document so React's event setup doesn't crash
         get ownerDocument() { return typeof document !== 'undefined' ? document : null; },
         style: {}, dataset: {},
-        innerHTML: '',
+        // _ihtml: base HTML set directly via innerHTML setter
+        // _kids:  child nodes appended via appendChild (stored as live references)
+        // innerHTML is defined below as a getter/setter via Object.defineProperty
+        _ihtml: '', _kids: [],
+        childNodes: [], children: [],
         parentNode: null, parentElement: null,
         classList: {
             _c: [],
@@ -100,16 +104,12 @@ function _r_el(tag) {
         },
         hasAttribute:    function(n) { return !!this.getAttribute(n); },
         removeAttribute: function() {},
+        // appendChild stores a live reference in _kids so that lazy innerHTML
+        // serialization (via the getter below) sees children's final state.
         appendChild: function(child) {
             if (child) {
-                if (typeof child.tagName === 'string') {
-                    this.innerHTML += _r_serialize(child);
-                } else if (child.nodeType === 3) {
-                    this.innerHTML += _r_esc(child.nodeValue || '');
-                } else if (typeof child === 'string') {
-                    this.innerHTML += child;
-                }
-                if (child && typeof child === 'object') {
+                this._kids.push(child);
+                if (typeof child === 'object') {
                     child.parentNode    = this;
                     child.parentElement = this;
                 }
@@ -117,11 +117,16 @@ function _r_el(tag) {
             return child;
         },
         prepend: function(child) {
-            var s = typeof child === 'string' ? child : _r_serialize(child);
-            this.innerHTML = s + this.innerHTML;
+            if (child && typeof child === 'object') {
+                this._kids.unshift(child);
+                child.parentNode    = this;
+                child.parentElement = this;
+            } else if (typeof child === 'string') {
+                this._ihtml = child + this._ihtml;
+            }
         },
         append: function(child) {
-            if (typeof child === 'string') this.innerHTML += child;
+            if (typeof child === 'string') this._ihtml += child;
             else this.appendChild(child);
         },
         insertBefore:    function(n)    { return this.appendChild(n); },
@@ -137,15 +142,34 @@ function _r_el(tag) {
         getClientRects:        function() { return []; },
         focus: function() {}, blur: function() {}, click: function() {},
         scrollIntoView: function() {}, scrollTo: function() {}, scroll: function() {},
-        insertAdjacentHTML:    function(pos, html) { this.innerHTML += html; },
+        insertAdjacentHTML:    function(pos, html) { this._ihtml += html; },
         insertAdjacentElement: function(pos, el)   { return this.appendChild(el); },
-        insertAdjacentText:    function(pos, text) { this.innerHTML += _r_esc(text); },
-        hasChildNodes: function() { return this.innerHTML.length > 0; },
+        insertAdjacentText:    function(pos, text) { this._ihtml += _r_esc(text); },
+        hasChildNodes: function() { return this._kids.length > 0 || this._ihtml.length > 0; },
         normalize: function() {},
         before: function() {}, after: function() {}, remove: function() {}, replaceWith: function() {},
         requestPointerLock: function() {},
         animate: function() { return { finished: Promise.resolve(), cancel: function(){} }; }
     };
+    // innerHTML getter: lazily serializes _kids so parent.appendChild(child) followed
+    // by child.appendChild(grandchild) produces the correct tree at readback time.
+    // Setter clears _kids and replaces the base HTML string.
+    Object.defineProperty(el, 'innerHTML', {
+        get: function() {
+            if (el._kids.length === 0) return el._ihtml;
+            var s = el._ihtml;
+            for (var i = 0; i < el._kids.length; i++) {
+                var c = el._kids[i];
+                if (c.nodeType === 3) s += _r_esc(c.nodeValue || '');
+                else if (c.tagName)   s += _r_serialize(c);
+                else if (typeof c === 'string') s += c;
+            }
+            return s;
+        },
+        set: function(v) { el._kids = []; el._ihtml = (v == null ? '' : String(v)); },
+        configurable: true,
+        enumerable: true
+    });
     Object.defineProperty(el, 'textContent', {
         get: function() {
             return el.innerHTML.replace(/<[^>]*>/g, '');
@@ -242,6 +266,10 @@ document.querySelector = function(sel) {
     if (tag === 'BODY')   return document.body;
     if (tag === 'HTML')   return document.documentElement;
     if (tag === 'SCRIPT') return document.currentScript;
+    // Simple class selector (.foo) or custom element name (app-root, todo-app):
+    // return document.body so frameworks can mount there rather than receiving null.
+    if (/^\.[a-zA-Z][\w-]*$/.test(sel)) return document.body;
+    if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(sel)) return document.body;
     return null;
 };
 document.querySelectorAll = function(sel) {
@@ -287,6 +315,7 @@ document.currentScript = {
         assign: function() {}, replace: function() {}, reload: function() {},
         toString: function() { return this.href; }
     };
+    document.location = window.location;
 })();
 window.navigator = {
     userAgent: 'rakers/0.1.0', appName: 'rakers', appVersion: '0.1.0',
@@ -507,6 +536,7 @@ window.HTMLSpanElement     = function() {};
 window.Element      = function() {};
 window.Node         = function() {};
 window.EventTarget  = function() {};
+window.SVGElement   = function() {};
 window.Document     = function() {};
 window.DocumentFragment = function() {};
 window.Window       = function() {};

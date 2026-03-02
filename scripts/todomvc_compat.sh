@@ -66,8 +66,8 @@ for path in "${EXAMPLES[@]}"; do
     skip_count=${skip_count:-0}
   fi
 
-  raw_has=$(echo "$raw"      | grep -c '<h1>todos</h1>' 2>/dev/null || true); raw_has=${raw_has:-0}
-  out_has=$(echo "$rendered" | grep -c '<h1>todos</h1>' 2>/dev/null || true); out_has=${out_has:-0}
+  raw_has=$(echo "$raw"      | grep -ciE '<h1[^>]*>todos</h1>' 2>/dev/null || true); raw_has=${raw_has:-0}
+  out_has=$(echo "$rendered" | grep -ciE '<h1[^>]*>todos</h1>' 2>/dev/null || true); out_has=${out_has:-0}
 
   if   [ "$raw_has" -eq 0 ] && [ "$out_has" -gt 0 ]; then verdict="YES (JS added)"
   elif [ "$out_has" -gt 0 ];                          then verdict="yes (prerendered)"

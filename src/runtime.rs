@@ -339,6 +339,9 @@ mod quickjs_rt {
                             .unwrap_or_else(|| "unknown exception".into());
                         eprintln!("[js error] {}", msg);
                     }
+                    // Drain the QuickJS pending-job queue (Promise microtasks) after each
+                    // script so that .then() chains fire before the next script runs.
+                    while ctx.execute_pending_job() {}
                 }
 
                 if let Some(t) = self.timeout { set_deadline(t); }
