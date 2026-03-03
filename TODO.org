@@ -1,0 +1,132 @@
+#+TITLE: rakers – remaining work
+#+DATE: 2025-10-01
+
+* Existing items
+** TODO remove extraneous info from doc comments
+   We don't need to document if we used external dependencies for a specific function.
+** TODO document which frameworks require which stubs / APIs
+   Use inline comments for this.
+** TODO [Research] Replace QuickJS with SpiderMonkey via ~mozjs~ crate
+   Swap the JS engine from QuickJS (rquickjs) to SpiderMonkey (mozjs) while
+   keeping the rest of the architecture unchanged.  SpiderMonkey is ES2024+,
+   handles large bundles without stack overflow, and is the same engine Firefox
+   ships.  This closes the JS compatibility gap without adding browser-level
+   complexity (no layout, no GPU, no event loop).
+
+   Tradeoffs vs current:
+   - Requires a C++ toolchain and a large build (mozjs is ~500 MB compiled)
+   - Binary size grows significantly; startup stays fast
+   - Eliminates the ~boa~ fallback (boa exists specifically to avoid C deps)
+   - ~mozjs~ crate API is lower-level than rquickjs; more boilerplate
+
+   Like the existing ~rquickjs~ / ~boa~ split, SpiderMonkey would live behind
+   a ~spidermonkey~ feature flag so consumers can still opt into the
+   lightweight QuickJS build.  The three-way choice at compile time would be:
+   ~boa~ (pure Rust, no C), ~rquickjs~ (default, QuickJS), ~spidermonkey~
+   (full ES2024+, largest build).
+
+   Worth prototyping on a branch once the current stub-improvement work
+   plateaus.
+
+** TODO [Research] Embed full Servo engine for pixel-perfect rendering
+   Replace the QuickJS + html5ever stack with embedded Servo to get full CSS
+   layout, real network, and SpiderMonkey JS — essentially a lightweight
+   headless browser comparable to prerender.io.
+
+   Blockers as of 2025-10:
+   - Servo's embedder API (~servo::Servo~, ~EmbedderMethods~) is unstable and
+     not published to crates.io; must depend on the git repo directly.
+   - Requires SpiderMonkey, a GL/GPU surface (even headless), and an async
+     event loop — substantially more complex than the current architecture.
+   - Build time ~30 min; binary hundreds of MB; memory ~200 MB at runtime.
+   - Would abandon the lightweight value proposition entirely.
+
+   This is the right path only if rakers pivots from "fast scraping tool" to
+   "embeddable Rust headless browser".  Track Servo embedding maturity; revisit
+   when the ~servo~ crate is stable on crates.io.
+
+* TodoMVC compatibility – remaining 5 failures
+
+Current score: 18 / 20 pass.
+
+** TODO Mithril (0 errors, no render)
+   ~https://todomvc.com/examples/mithril/~
+
+   Mithril 0.x renders via ~m.route()~ which reads ~window.location.hash~
+   to pick a route.  When hash is empty the router falls through and nothing
+   renders.
+
+   Approach:
+   - Check whether appending ~#/~ to the URL passed to rakers makes the
+     Mithril hash router resolve the default route.
+   - Alternatively inspect whether ~m.render(container, vnode)~ is called
+     at all; if it is, the problem is in how we serialise the rendered tree.
+
+** TODO Elm (1 error: ~cannot read property 'length' of undefined~)
+   ~https://todomvc.com/examples/elm/~
+
+   Elm's compiled kernel reads ~.length~ on something undefined in our stub
+   environment.  Most likely candidate: ~classList~ is a plain object with
+   no ~length~ property, or ~childNodes~ on a stub element that is ~null~
+   rather than ~[]~.
+
+   Approach:
+   - Run with ~--verbose~, read the full error stack to identify which object
+     is undefined.
+   - Add ~length~ as a live getter to ~classList~ (returns ~_c.length~).
+
+** TODO RiotJS (0 errors, no render)
+   ~https://todomvc.com/examples/riotjs/~
+
+   The page loads its template via ~<script type="riot/tag" src="js/todo.html">~
+   (skipped by rakers) and then expects Riot's compiler to fetch it at
+   runtime via XHR.  Our XHR stub returns empty ~responseText~, so the
+   compiler has nothing to compile.
+
+   Approach (preferred): make the XHR stub perform a real HTTP GET and store
+   the response body in ~responseText~ before firing ~onload~.  This fixes
+   Riot and benefits any framework that XHR-loads templates.  The fetch must
+   respect the same ~HttpConfig~ (headers, UA) as the main page fetch.
+
+** TODO Lit (1 error: ~unsupported keyword: export~)
+   ~https://todomvc.com/examples/lit/dist/~
+
+   The Lit TodoMVC bundle is a native ES module (~export const~ at top level).
+   Our skip heuristic correctly refuses it; no clean workaround exists without
+   a full module loader.
+
+   Approach: document the limitation in the README.  The Lit example is the
+   only TodoMVC case that ships a naked ES-module bundle with no IIFE fallback.
+
+** TODO Ember (1 error: meta config tag missing)
+   ~https://todomvc.com/examples/emberjs/todomvc/dist/~
+
+   Ember reads its environment config from a ~<meta name="todomvc/config/environment">~
+   tag.  ~document.querySelector('meta[name="..."]')~ returns ~null~ in our
+   stub, so Ember cannot boot.
+
+   Approach: during HTML parse in ~dom.rs~, collect all ~<meta>~ tags into a
+   map and expose them via a ~_r_meta~ JS object.  Extend
+   ~document.querySelector~ to look up ~meta[name="X"]~ in ~_r_meta~ and
+   return a stub element with the correct ~content~ attribute.
+
+* Code quality
+
+** TODO Remove dead code in runtime.rs
+   ~SCRIPT_TIMEOUT~ constant and ~JsRuntime::new()~ are unused (replaced by
+   ~with_timeout~ / ~without_timeout~).  Delete or rename to suppress
+   the dead_code warnings.
+
+** TODO Fix false-positive test ~fetch_stub_resolves_then_chain~
+   The assertion ~out.contains("<p>fetch-ok</p>")~ passes because the string
+   appears literally inside the ~<script>~ tag in the output, not because
+   the Promise ~.then()~ actually ran.  Rewrite to use DOM manipulation
+   (e.g. ~document.getElementById~) instead of ~document.write~, or assert
+   the match is outside a ~<script>~ block.
+
+* Documentation
+
+** TODO Update README compatibility table
+   Vue, Angular, Svelte, Preact, and web-components now render correctly.
+   Update the per-framework rows and the prose summary in the Compatibility
+   section.
