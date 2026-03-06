@@ -604,13 +604,15 @@ mod tests {
     #[test]
     fn fetch_stub_resolves_then_chain() {
         // fetch() must return a resolved Promise so .then() chains fire, not crash.
+        // Assert the rendered string appears *after* </script> — not just in the source.
         let js = concat!(
             "window.fetch('/api/data')",
             ".then(function(r){ return r.text(); })",
             ".then(function(t){ document.write('<p>fetch-ok</p>'); });",
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("<p>fetch-ok</p>"), "fetch .then() chain must fire, got: {out}");
+        let after_script = out.find("</script>").map(|i| &out[i..]).unwrap_or("");
+        assert!(after_script.contains("<p>fetch-ok</p>"), "fetch .then() chain must fire, got: {out}");
     }
 
     #[test]
@@ -620,7 +622,8 @@ mod tests {
             ".then(function(d){ document.write('<p>json-ok</p>'); });",
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("<p>json-ok</p>"), "fetch.json() chain must fire, got: {out}");
+        let after_script = out.find("</script>").map(|i| &out[i..]).unwrap_or("");
+        assert!(after_script.contains("<p>json-ok</p>"), "fetch.json() chain must fire, got: {out}");
     }
 
     #[test]
@@ -632,7 +635,8 @@ mod tests {
             "xhr.send();",
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("<p>xhr-ok</p>"), "XHR onload must fire, got: {out}");
+        let after_script = out.find("</script>").map(|i| &out[i..]).unwrap_or("");
+        assert!(after_script.contains("<p>xhr-ok</p>"), "XHR onload must fire, got: {out}");
     }
 
     #[test]
