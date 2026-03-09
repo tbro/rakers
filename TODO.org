@@ -4,7 +4,7 @@
 * Existing items
 ** TODO remove extraneous info from doc comments
    We don't need to document if we used external dependencies for a specific function.
-** TODO document which frameworks require which stubs / APIs
+** DONE document which frameworks require which stubs / APIs
    Use inline comments for this.
 ** TODO [Research] Replace QuickJS with SpiderMonkey via ~mozjs~ crate
    Swap the JS engine from QuickJS (rquickjs) to SpiderMonkey (mozjs) while
@@ -50,7 +50,7 @@
 
 Current score: 18 / 20 pass.
 
-** TODO Mithril (0 errors, no render)
+** DONE Mithril (0 errors, no render)
    ~https://todomvc.com/examples/mithril/~
 
    Mithril 0.x renders via ~m.route()~ which reads ~window.location.hash~

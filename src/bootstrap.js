@@ -6,10 +6,11 @@ var self   = window;
 var global = window;
 
 // Node.js-style globals that bundlers (webpack/vite) reference at runtime.
+// React/Vue/Angular all gate dev-mode warnings on process.env.NODE_ENV.
 var process = {
     env: { NODE_ENV: 'production' },
     browser: true, version: 'v18.0.0', versions: {},
-    nextTick: function(fn) {}
+    nextTick: function(fn) {}  // some polyfill shims (e.g. promise-polyfill) call process.nextTick
 };
 
 // ─── URL parser (used by element setAttribute and window.URL) ───────────────
@@ -56,7 +57,7 @@ function _r_el(tag) {
         // URL-derived properties (populated when href is set on anchor/link elements)
         protocol: '', host: '', hostname: '', port: '', pathname: '',
         search: '', hash: '', origin: '',
-        // ownerDocument — lazily returns the global document so React's event setup doesn't crash
+        // React: event delegation walks node.ownerDocument to find the root container
         get ownerDocument() { return typeof document !== 'undefined' ? document : null; },
         style: {}, dataset: {},
         // _ihtml: base HTML set directly via innerHTML setter
@@ -64,6 +65,7 @@ function _r_el(tag) {
         // innerHTML is defined below as a getter/setter via Object.defineProperty
         _ihtml: '', _kids: [],
         parentNode: null, parentElement: null,
+        // Angular/Vue: classList.add/remove/contains used for dynamic class binding
         classList: {
             _c: [],
             add:      function(c) { if (this._c.indexOf(c) < 0) this._c.push(c); },
@@ -103,8 +105,9 @@ function _r_el(tag) {
         },
         hasAttribute:    function(n) { return !!this.getAttribute(n); },
         removeAttribute: function() {},
-        // appendChild stores a live reference in _kids so that lazy innerHTML
-        // serialization (via the getter below) sees children's final state.
+        // All VirtualDom frameworks (React, Vue, Mithril, Elm): appendChild/insertBefore/removeChild
+        // are the primary DOM-building primitives. insertBefore and removeChild must mutate _kids
+        // so that childNodes[i] indexing (used by Mithril/Elm diffing) stays correct.
         appendChild: function(child) {
             if (child) {
                 this._kids.push(child);
@@ -195,8 +198,8 @@ function _r_el(tag) {
         },
         configurable: true
     });
-    // childNodes/children are live views of _kids so frameworks that use
-    // insertBefore/removeChild with childNodes[i] indexing work correctly.
+    // Mithril, Elm: VirtualDom patching indexes childNodes[i] to find insertion/removal
+    // points. Must be a live view of _kids, not a static empty array.
     Object.defineProperty(el, 'childNodes', {
         get: function() { return el._kids; },
         configurable: true
@@ -250,10 +253,10 @@ var _r_reg = {};
 // ─── document ────────────────────────────────────────────────────────────────
 
 document.createElement    = _r_el;
-document.createElementNS  = function(ns, tag) { return _r_el(tag); };
+document.createElementNS  = function(ns, tag) { return _r_el(tag); };  // Vue/Angular: SVG elements created via createElementNS
 document.createTextNode   = function(t) { return {nodeType:3, nodeValue:String(t), textContent:String(t)}; };
 document.createComment    = function(t) { return {nodeType:8, nodeValue:t}; };
-document.createDocumentFragment = function() { return _r_el('div'); };
+document.createDocumentFragment = function() { return _r_el('div'); };  // React/Angular: mount root appended to a fragment first
 document.createRange      = function() {
     return {
         selectNodeContents: function() {},
@@ -262,7 +265,7 @@ document.createRange      = function() {
     };
 };
 document.createEvent = function() { return {initEvent:function(){}, type:'', bubbles:false, cancelable:false}; };
-document.nodeType = 9; // DOCUMENT_NODE — needed by React's event-listener setup
+document.nodeType = 9; // React: checks node.nodeType === 9 to identify the document root when wiring synthetic events
 
 document.getElementById = function(id) {
     if (!_r_reg[id]) { var e = _r_el('div'); e.id = id; _r_reg[id] = e; }
@@ -275,8 +278,7 @@ document.getElementsByTagName   = function(tag) {
     if (t === 'HEAD')   return [document.head];
     if (t === 'BODY')   return [document.body];
     if (t === 'HTML')   return [document.documentElement];
-    // Bundlers (webpack GA snippet) do getElementsByTagName('script')[0].parentNode
-    // to find an insertion point. Return a script-like element parented to head.
+    // webpack/GA: `getElementsByTagName('script')[0].parentNode` to find a DOM insertion point
     if (t === 'SCRIPT') return [document.currentScript];
     return [];
 };
@@ -292,10 +294,10 @@ document.querySelector = function(sel) {
     if (tag === 'BODY')   return document.body;
     if (tag === 'HTML')   return document.documentElement;
     if (tag === 'SCRIPT') return document.currentScript;
-    // Simple class selector (.foo) or custom element name (app-root, todo-app):
-    // return document.body so frameworks can mount there rather than receiving null.
-    if (/^\.[a-zA-Z][\w-]*$/.test(sel)) return document.body;
-    if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(sel)) return document.body;
+    // Mithril: mounts via querySelector('.todoapp'); Angular: querySelector('app-root').
+    // Return document.body so the framework mounts into our captured DOM rather than null.
+    if (/^\.[a-zA-Z][\w-]*$/.test(sel)) return document.body;  // .class selector
+    if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(sel)) return document.body;  // custom-element name
     return null;
 };
 document.querySelectorAll = function(sel) {
@@ -321,8 +323,8 @@ document.elementFromPoint    = function() { return null; };
 document.elementsFromPoint   = function() { return []; };
 document.activeElement       = null;
 document.defaultView         = window;
-// Stub for scripts that read document.currentScript.src (webpack publicPath) or
-// document.currentScript.parentElement (SvelteKit init).
+// webpack: reads document.currentScript.src to determine the public asset path.
+// SvelteKit: reads document.currentScript.parentElement to detect the mount context.
 document.currentScript = {
     src: '__HREF__', type: 'text/javascript', nodeType: 1, tagName: 'SCRIPT',
     parentElement: document.head, parentNode: document.head,
@@ -342,7 +344,8 @@ document.currentScript = {
         assign: function() {}, replace: function() {}, reload: function() {},
         toString: function() { return this.href; }
     };
-    // hash setter fires onhashchange so hash-routers (e.g. Mithril) get re-triggered
+    // Mithril: sets window.location.hash = '#/' when no route matches, then relies on
+    // window.onhashchange to re-trigger routing and render the default route.
     Object.defineProperty(_loc, 'hash', {
         get: function() { return _hash; },
         set: function(v) {
@@ -369,6 +372,8 @@ window.navigator = {
     javaEnabled: function() { return false; }
 };
 window.screen = {width:1920, height:1080, availWidth:1920, availHeight:1080, colorDepth:24};
+// Angular router uses history.pushState for navigation; Mithril uses replaceState
+// during its initial route redirect (m.route with mode='hash').
 window.history = {
     length: 1, scrollRestoration: 'auto', state: null,
     pushState:    function(s) { this.state = s || null; },
@@ -384,6 +389,7 @@ window.performance = {
     timing:  { navigationStart: 0, domContentLoadedEventEnd: 0, loadEventEnd: 0 },
     memory:  { usedJSHeapSize: 0, jsHeapSizeLimit: 2147483648 }
 };
+// Mithril TodoMVC: persists todos to localStorage; Aurelia and Backbone TodoMVC do the same.
 window.localStorage = {
     _s: {}, length: 0,
     getItem:    function(k) { return Object.prototype.hasOwnProperty.call(this._s, k) ? this._s[k] : null; },
@@ -400,7 +406,10 @@ window.sessionStorage = {
     clear:      function()  { this._s = {}; },
     key:        function()  { return null; }
 };
-// Collect deferred callbacks so we can flush them after scripts finish.
+// Deferred callbacks flushed in a loop after all scripts run (see READBACK_JS in runtime.rs).
+// setTimeout: Backbone/KnockoutJS defer their initial render via setTimeout(fn, 0).
+// requestAnimationFrame: Mithril schedules redraws via rAF; Vue 2 also uses rAF as a nextTick fallback.
+// queueMicrotask: Vue 3 nextTick uses queueMicrotask when available.
 var _r_timers = [];
 window.setTimeout            = function(fn, delay) { if (typeof fn === 'function') _r_timers.push(fn); return _r_timers.length; };
 window.clearTimeout          = function(id) {};
@@ -429,6 +438,9 @@ window.fetch = function(url) {
     };
     return Promise.resolve(res);
 };
+// RiotJS: loads component templates at runtime via XHR (src="todo.html" in a riot/tag script).
+// The send() stub queues a timer so onload fires after scripts finish; responseText is empty
+// which is why RiotJS doesn't render (would need a real HTTP GET to fix).
 window.XMLHttpRequest  = function() {
     var self = this;
     this.readyState=0; this.status=0; this.statusText='';
@@ -479,11 +491,11 @@ window.matchMedia   = function(q) {
 window.getComputedStyle = function(el) { return {}; };
 window.requestIdleCallback  = function(fn) { return 0; };
 window.cancelIdleCallback   = function(id) {};
-window.MutationObserver     = function(cb) { this.observe=function(){}; this.disconnect=function(){}; this.takeRecords=function(){return [];}; };
+window.MutationObserver     = function(cb) { this.observe=function(){}; this.disconnect=function(){}; this.takeRecords=function(){return [];}; };  // Angular zone.js, Vue: patch MutationObserver to detect async DOM changes
 window.ResizeObserver       = function(cb) { this.observe=function(){}; this.disconnect=function(){}; this.unobserve=function(){}; };
 window.IntersectionObserver = function(cb) { this.observe=function(){}; this.disconnect=function(){}; this.unobserve=function(){}; };
 window.PerformanceObserver  = function(cb) { this.observe=function(){}; this.disconnect=function(){}; };
-window.CustomEvent  = function(type, init) { this.type=type; this.detail=init&&init.detail||null; this.bubbles=false; this.cancelable=false; };
+window.CustomEvent  = function(type, init) { this.type=type; this.detail=init&&init.detail||null; this.bubbles=false; this.cancelable=false; };  // web-components, Angular: dispatch custom events
 window.Event        = function(type, init) { this.type=type; this.bubbles=!!(init&&init.bubbles); this.cancelable=!!(init&&init.cancelable); };
 window.KeyboardEvent= window.Event;
 window.MouseEvent   = window.Event;
@@ -494,6 +506,8 @@ window.ErrorEvent   = window.Event;
 window.MessageEvent = function(type, init) { this.type=type; this.data=init&&init.data||null; };
 window.PointerEvent = window.Event;
 window.WheelEvent   = window.Event;
+// React scheduler (>=17): uses MessageChannel to schedule work as a macrotask,
+// ensuring renders happen after browser paint. port1.postMessage triggers port2.onmessage.
 window.MessageChannel = function() {
     var self = this;
     this.port1 = { onmessage: null, postMessage: function(msg) {
@@ -506,7 +520,7 @@ window.MessageChannel = function() {
 window.addEventListener    = function() {};
 window.removeEventListener = function() {};
 window.dispatchEvent       = function() { return true; };
-// Analytics stubs — prevents crashes when GA/GTM scripts fail to load
+// Google Analytics / GTM: many pages include GA4 which references dataLayer and gtag
 window.dataLayer = [];
 window.gtag = function() { window.dataLayer.push(arguments); };
 window.btoa = function(str) {
@@ -540,6 +554,8 @@ window.crypto       = {getRandomValues:function(a){return a;}, subtle:{}, random
 window.CSS          = {supports:function(){return false;}, escape:function(s){return s;}};
 window.DOMException = function(msg, name) { this.message=msg||''; this.name=name||'Error'; this.code=0; };
 window.DOMException.prototype = Object.create(Error.prototype);
+// web-components framework: calls customElements.define() to register <todo-app> etc.;
+// whenDefined() is awaited before mounting.
 window.customElements = {
     define: function() {}, get: function() { return undefined; },
     upgrade: function() {}, whenDefined: function() { return Promise.resolve(); }
@@ -563,6 +579,8 @@ window.URLSearchParams = function(init) {
         }, this).join('&');
     };
 };
+// web-components: custom elements extend HTMLElement; the constructor check
+// `el instanceof HTMLElement` must not throw.
 window.HTMLElement         = function() {};
 window.HTMLTemplateElement = function() {};
 window.HTMLIFrameElement   = function() {};
@@ -580,11 +598,11 @@ window.HTMLSpanElement     = function() {};
 window.Element      = function() {};
 window.Node         = function() {};
 window.EventTarget  = function() {};
-window.SVGElement   = function() {};
+window.SVGElement   = function() {};  // Vue: checks `el instanceof SVGElement` when deciding how to create elements
 window.Document     = function() {};
 window.DocumentFragment = function() {};
 window.Window       = function() {};
-window.ShadowRoot   = function() {};
+window.ShadowRoot   = function() {};  // web-components, Svelte: shadow DOM host check
 window.devicePixelRatio = 1;
 window.innerWidth  = 1920; window.innerHeight = 1080;
 window.outerWidth  = 1920; window.outerHeight = 1080;
