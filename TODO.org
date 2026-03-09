@@ -45,6 +45,7 @@
    "embeddable Rust headless browser".  Track Servo embedding maturity; revisit
    when the ~servo~ crate is stable on crates.io.
 
+
 * TodoMVC compatibility – remaining 5 failures
 
 Current score: 18 / 20 pass.
@@ -117,7 +118,7 @@ Current score: 18 / 20 pass.
    ~with_timeout~ / ~without_timeout~).  Delete or rename to suppress
    the dead_code warnings.
 
-** TODO Fix false-positive test ~fetch_stub_resolves_then_chain~
+** DONE Fix false-positive test ~fetch_stub_resolves_then_chain~
    The assertion ~out.contains("<p>fetch-ok</p>")~ passes because the string
    appears literally inside the ~<script>~ tag in the output, not because
    the Promise ~.then()~ actually ran.  Rewrite to use DOM manipulation

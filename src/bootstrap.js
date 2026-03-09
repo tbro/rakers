@@ -63,7 +63,6 @@ function _r_el(tag) {
         // _kids:  child nodes appended via appendChild (stored as live references)
         // innerHTML is defined below as a getter/setter via Object.defineProperty
         _ihtml: '', _kids: [],
-        childNodes: [], children: [],
         parentNode: null, parentElement: null,
         classList: {
             _c: [],
@@ -129,9 +128,26 @@ function _r_el(tag) {
             if (typeof child === 'string') this._ihtml += child;
             else this.appendChild(child);
         },
-        insertBefore:    function(n)    { return this.appendChild(n); },
-        removeChild:     function(c)    { return c; },
-        replaceChild:    function(n, o) { this.appendChild(n); return o; },
+        insertBefore: function(n, ref) {
+            if (!n) return n;
+            if (ref == null) return this.appendChild(n);
+            var idx = this._kids.indexOf(ref);
+            if (idx >= 0) this._kids.splice(idx, 0, n);
+            else this._kids.push(n);
+            if (typeof n === 'object') { n.parentNode = this; n.parentElement = this; }
+            return n;
+        },
+        removeChild: function(c) {
+            var idx = this._kids.indexOf(c);
+            if (idx >= 0) this._kids.splice(idx, 1);
+            return c;
+        },
+        replaceChild: function(n, o) {
+            var idx = this._kids.indexOf(o);
+            if (idx >= 0) { this._kids[idx] = n; if (typeof n === 'object') { n.parentNode = this; n.parentElement = this; } }
+            else this._kids.push(n);
+            return o;
+        },
         cloneNode:       function(deep) { var c = _r_el(this.tagName); if (deep) c.innerHTML = this.innerHTML; return c; },
         contains:        function()     { return false; },
         closest:         function()     { return null; },
@@ -177,6 +193,16 @@ function _r_el(tag) {
         set: function(v) {
             el.innerHTML = _r_esc(v == null ? '' : String(v));
         },
+        configurable: true
+    });
+    // childNodes/children are live views of _kids so frameworks that use
+    // insertBefore/removeChild with childNodes[i] indexing work correctly.
+    Object.defineProperty(el, 'childNodes', {
+        get: function() { return el._kids; },
+        configurable: true
+    });
+    Object.defineProperty(el, 'children', {
+        get: function() { return el._kids.filter(function(k) { return k && (k.nodeType === 1 || k.tagName); }); },
         configurable: true
     });
     if (tag === 'TEMPLATE') {
@@ -308,14 +334,32 @@ document.currentScript = {
 
 (function() {
     var _u = _r_parse_url("__HREF__");
-    window.location = {
+    var _hash = _u.hash;
+    var _loc = {
         href:     _u.href,     protocol: _u.protocol, host:     _u.host,
         hostname: _u.hostname, port:     _u.port,     pathname: _u.pathname,
-        search:   _u.search,   hash:     _u.hash,     origin:   _u.origin,
+        search:   _u.search,   origin:   _u.origin,
         assign: function() {}, replace: function() {}, reload: function() {},
         toString: function() { return this.href; }
     };
-    document.location = window.location;
+    // hash setter fires onhashchange so hash-routers (e.g. Mithril) get re-triggered
+    Object.defineProperty(_loc, 'hash', {
+        get: function() { return _hash; },
+        set: function(v) {
+            var prev = _hash;
+            _hash = String(v);
+            if (prev !== _hash) {
+                _r_timers.push(function() {
+                    if (typeof window.onhashchange === 'function') {
+                        try { window.onhashchange({ type: 'hashchange', oldURL: prev, newURL: _hash }); } catch(e) {}
+                    }
+                });
+            }
+        },
+        enumerable: true, configurable: true
+    });
+    window.location = _loc;
+    document.location = _loc;
 })();
 window.navigator = {
     userAgent: 'rakers/0.1.0', appName: 'rakers', appVersion: '0.1.0',

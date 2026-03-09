@@ -345,7 +345,19 @@ fn raw_body_content_len(html: &str) -> usize {
     let body_start = html.find("<body").unwrap_or(0);
     let content_start = html[body_start..].find('>').map(|i| i + body_start + 1).unwrap_or(0);
     let body_end = html.rfind("</body>").unwrap_or(html.len());
-    body_end.saturating_sub(content_start)
+    let body = &html[content_start.min(body_end)..body_end];
+    // Exclude <script> tags so SPAs with many script src= references aren't
+    // mistaken for large server-rendered pages.
+    let mut len = body.len();
+    let mut rest = body;
+    while let Some(s) = rest.find("<script") {
+        let end = rest[s..].find("</script>").map(|e| s + e + 9)
+            .or_else(|| rest[s..].find("/>").map(|e| s + e + 2))
+            .unwrap_or(rest.len());
+        len -= end - s;
+        rest = &rest[end.min(rest.len())..];
+    }
+    len
 }
 
 /// Fetch `url`, execute its scripts, and return the rendered HTML.
