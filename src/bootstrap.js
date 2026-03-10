@@ -52,6 +52,8 @@ function _r_el(tag) {
     tag = (tag || 'DIV').toUpperCase();
     var el = {
         tagName: tag, nodeName: tag, nodeType: 1,
+        // Elm VirtualDom: _VirtualDom_virtualize iterates node.attributes to rebuild vdom from existing DOM
+        attributes: [],
         id: '', className: '', name: '', type: '', value: '',
         href: '', src: '', alt: '', placeholder: '',
         // URL-derived properties (populated when href is set on anchor/link elements)

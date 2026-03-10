@@ -48,7 +48,7 @@
 
 * TodoMVC compatibility – remaining 5 failures
 
-Current score: 18 / 20 pass.
+Current score: 17 / 20 pass.
 
 ** DONE Mithril (0 errors, no render)
    ~https://todomvc.com/examples/mithril/~
@@ -63,7 +63,7 @@ Current score: 18 / 20 pass.
    - Alternatively inspect whether ~m.render(container, vnode)~ is called
      at all; if it is, the problem is in how we serialise the rendered tree.
 
-** TODO Elm (1 error: ~cannot read property 'length' of undefined~)
+** DONE Elm (1 error: ~cannot read property 'length' of undefined~)
    ~https://todomvc.com/examples/elm/~
 
    Elm's compiled kernel reads ~.length~ on something undefined in our stub
