@@ -111,12 +111,34 @@ function _r_el(tag) {
         // are the primary DOM-building primitives. insertBefore and removeChild must mutate _kids
         // so that childNodes[i] indexing (used by Mithril/Elm diffing) stays correct.
         appendChild: function(child) {
-            if (child) {
-                this._kids.push(child);
-                if (typeof child === 'object') {
-                    child.parentNode    = this;
-                    child.parentElement = this;
+            if (!child) return child;
+            // Riot 2.x / tag-based frameworks: innerHTML is copied to a fragment via a raw-HTML
+            // proxy node; appending the proxy transfers its string content to _ihtml.
+            if (child._rawHtml !== undefined) {
+                this._ihtml += child._rawHtml;
+                if (child.parentNode && child.parentNode._kids) {
+                    var _ri = child.parentNode._kids.indexOf(child);
+                    if (_ri >= 0) child.parentNode._kids.splice(_ri, 1);
                 }
+                return child;
+            }
+            // Script injection: Riot 2.x compiler sets script.text = compiledCode then
+            // appends the script to document.documentElement to execute it.
+            // Eval the code at global scope so riot.tag() registration takes effect.
+            if ((child.tagName === 'SCRIPT' || child.tagName === 'script') &&
+                    typeof child.text === 'string' && child.text) {
+                try { (0, eval)(child.text); } catch(e) {}
+                return child;
+            }
+            // Real DOM move semantics: remove from old parent before adding to new one.
+            if (child.parentNode && child.parentNode !== this && child.parentNode._kids) {
+                var _oi = child.parentNode._kids.indexOf(child);
+                if (_oi >= 0) child.parentNode._kids.splice(_oi, 1);
+            }
+            this._kids.push(child);
+            if (typeof child === 'object') {
+                child.parentNode    = this;
+                child.parentElement = this;
             }
             return child;
         },
@@ -174,20 +196,31 @@ function _r_el(tag) {
     };
     // innerHTML getter: lazily serializes _kids so parent.appendChild(child) followed
     // by child.appendChild(grandchild) produces the correct tree at readback time.
-    // Setter clears _kids and replaces the base HTML string.
+    // Setter clears _kids and, when non-empty, creates a raw-HTML proxy node so that
+    // Riot's `while(p.firstChild) M.appendChild(p.firstChild)` loop can transfer content.
     Object.defineProperty(el, 'innerHTML', {
         get: function() {
             if (el._kids.length === 0) return el._ihtml;
             var s = el._ihtml;
             for (var i = 0; i < el._kids.length; i++) {
                 var c = el._kids[i];
-                if (c.nodeType === 3) s += _r_esc(c.nodeValue || '');
+                if (c._rawHtml !== undefined) s += c._rawHtml; // raw-HTML proxy
+                else if (c.nodeType === 3) s += _r_esc(c.nodeValue || '');
                 else if (c.tagName)   s += _r_serialize(c);
                 else if (typeof c === 'string') s += c;
             }
             return s;
         },
-        set: function(v) { el._kids = []; el._ihtml = (v == null ? '' : String(v)); },
+        set: function(v) {
+            var str = (v == null ? '' : String(v));
+            el._ihtml = '';
+            if (str) {
+                // Wrap in a proxy so firstChild traversal (used by Riot et al.) can move content.
+                el._kids = [{ _rawHtml: str, nodeType: 11, _kids: [], parentNode: el, parentElement: el }];
+            } else {
+                el._kids = [];
+            }
+        },
         configurable: true,
         enumerable: true
     });
@@ -208,6 +241,15 @@ function _r_el(tag) {
     });
     Object.defineProperty(el, 'children', {
         get: function() { return el._kids.filter(function(k) { return k && (k.nodeType === 1 || k.tagName); }); },
+        configurable: true
+    });
+    // Riot and DOM-traversal code uses firstChild / lastChild to iterate or move children.
+    Object.defineProperty(el, 'firstChild', {
+        get: function() { return el._kids.length > 0 ? el._kids[0] : null; },
+        configurable: true
+    });
+    Object.defineProperty(el, 'lastChild', {
+        get: function() { return el._kids.length > 0 ? el._kids[el._kids.length - 1] : null; },
         configurable: true
     });
     if (tag === 'TEMPLATE') {
@@ -251,6 +293,9 @@ function _r_esc_a(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quo
 // ─── Element registry ────────────────────────────────────────────────────────
 
 var _r_reg = {};
+// Non-JS typed <script> elements (e.g. type="riot/tag") registered by dom.rs at startup.
+// querySelectorAll('script[type="X"]') searches here.
+var _r_nonstandard_scripts = [];
 
 // ─── document ────────────────────────────────────────────────────────────────
 
@@ -300,9 +345,38 @@ document.querySelector = function(sel) {
     // Return document.body so the framework mounts into our captured DOM rather than null.
     if (/^\.[a-zA-Z][\w-]*$/.test(sel)) return document.body;  // .class selector
     if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(sel)) return document.body;  // custom-element name
+    // Bare non-standard tag names used by Riot and similar tag-based frameworks (e.g. 'todo').
+    // Return a real element with the right tagName so the framework can mount on it and set innerHTML.
+    // Exclude known HTML tags to avoid ambiguity.
+    var _KNOWN = ',area,base,body,br,button,canvas,caption,col,colgroup,data,datalist,dd,del,details,dfn,dialog,div,dl,dt,em,embed,fieldset,figcaption,figure,footer,form,h1,h2,h3,h4,h5,h6,head,header,hgroup,hr,html,iframe,img,input,ins,kbd,label,legend,li,link,main,map,mark,menu,meta,meter,nav,noscript,object,ol,optgroup,option,output,p,param,picture,pre,progress,q,rp,rt,ruby,s,samp,script,section,select,small,source,span,strong,style,sub,summary,sup,table,tbody,td,template,textarea,tfoot,th,thead,time,title,tr,track,u,ul,var,video,wbr,';
+    if (/^[a-z][a-z0-9]*$/.test(sel) && _KNOWN.indexOf(',' + sel + ',') < 0) {
+        if (!_r_reg['_tag_' + sel]) {
+            var _te = _r_el(sel);
+            _r_reg['_tag_' + sel] = _te;
+            document.body._kids.push(_te);
+        }
+        return _r_reg['_tag_' + sel];
+    }
     return null;
 };
 document.querySelectorAll = function(sel) {
+    if (!sel) return [];
+    // Comma-separated compound selectors: union results from each part.
+    // RiotJS uses 'todo, *[riot-tag="todo"]'; splitting lets querySelector handle each.
+    if (sel.indexOf(',') >= 0) {
+        var results = [];
+        sel.split(',').forEach(function(part) {
+            var found = document.querySelector(part.trim());
+            if (found && results.indexOf(found) < 0) results.push(found);
+        });
+        return results;
+    }
+    // script[type="X"] → nonstandard script registry (populated by dom.rs for riot/tag etc.)
+    var scriptType = sel.match(/^script\[type=['"]?([^'">\]]+)['"]?\]$/i);
+    if (scriptType) {
+        var t = scriptType[1].toLowerCase();
+        return _r_nonstandard_scripts.filter(function(s) { return s.type === t; });
+    }
     var el = document.querySelector(sel);
     return el ? [el] : [];
 };
@@ -440,9 +514,9 @@ window.fetch = function(url) {
     };
     return Promise.resolve(res);
 };
-// RiotJS: loads component templates at runtime via XHR (src="todo.html" in a riot/tag script).
-// The send() stub queues a timer so onload fires after scripts finish; responseText is empty
-// which is why RiotJS doesn't render (would need a real HTTP GET to fix).
+// RiotJS: loads component templates at runtime via XHR (`src="todo.html"` in a riot/tag script).
+// send() performs a real HTTP GET via the native _r_fetch_sync() function (registered by Rust)
+// so responseText contains the template body when onload fires.
 window.XMLHttpRequest  = function() {
     var self = this;
     this.readyState=0; this.status=0; this.statusText='';
@@ -450,10 +524,38 @@ window.XMLHttpRequest  = function() {
     this.responseType=''; this.withCredentials=false; this.timeout=0;
     this.onreadystatechange=null; this.onload=null; this.onerror=null;
     this.onprogress=null; this.ontimeout=null; this.onabort=null;
-    this.open=function(){};
+    this._url=''; this._method='GET'; this._async=true;
+    this.open=function(method, url, async) {
+        self._method = method || 'GET'; self._url = url || '';
+        // Riot 2.x compiler: xhr.open('GET', url, false) — synchronous mode.
+        self._async = (async !== false);
+    };
     this.send=function() {
+        var url = self._url;
+        // Resolve relative URLs against the page URL before the native fetch.
+        var abs = (typeof _r_parse_url === 'function')
+            ? _r_parse_url(url, window.location && window.location.href).href
+            : url;
+        if (!self._async) {
+            // Synchronous XHR: fetch immediately so responseText is available before send() returns.
+            if (typeof _r_fetch_sync === 'function') {
+                try {
+                    var sbody = _r_fetch_sync(abs) || '';
+                    self.readyState=4; self.status=200; self.statusText='OK';
+                    self.responseText=sbody; self.response=sbody;
+                    if (typeof self.onreadystatechange==='function') try { self.onreadystatechange.call(self); } catch(e) {}
+                    if (typeof self.onload==='function')             try { self.onload.call(self, {target:self}); } catch(e) {}
+                } catch(e) {}
+            }
+            return;
+        }
         _r_timers.push(function() {
+            var body = '';
+            if (typeof _r_fetch_sync === 'function') {
+                try { body = _r_fetch_sync(abs) || ''; } catch(e) {}
+            }
             self.readyState=4; self.status=200; self.statusText='OK';
+            self.responseText=body; self.response=body;
             if (typeof self.onreadystatechange==='function') try { self.onreadystatechange.call(self); } catch(e) {}
             if (typeof self.onload==='function')             try { self.onload.call(self, {target:self}); } catch(e) {}
         });

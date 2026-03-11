@@ -45,10 +45,13 @@
    "embeddable Rust headless browser".  Track Servo embedding maturity; revisit
    when the ~servo~ crate is stable on crates.io.
 
+   
+** TODO Create a rest API with ruoughly the same functionality as the CLI
+probably use Axum for this, but open to suggestions.
 
-* TodoMVC compatibility – remaining 5 failures
+* TodoMVC compatibility – remaining 2 failures
 
-Current score: 17 / 20 pass.
+Current score: 21 / 23 pass.
 
 ** DONE Mithril (0 errors, no render)
    ~https://todomvc.com/examples/mithril/~
@@ -76,7 +79,7 @@ Current score: 17 / 20 pass.
      is undefined.
    - Add ~length~ as a live getter to ~classList~ (returns ~_c.length~).
 
-** TODO RiotJS (0 errors, no render)
+** DONE RiotJS (0 errors, no render)
    ~https://todomvc.com/examples/riotjs/~
 
    The page loads its template via ~<script type="riot/tag" src="js/todo.html">~
@@ -88,6 +91,17 @@ Current score: 17 / 20 pass.
    the response body in ~responseText~ before firing ~onload~.  This fixes
    Riot and benefits any framework that XHR-loads templates.  The fetch must
    respect the same ~HttpConfig~ (headers, UA) as the main page fetch.
+
+   Completed: four fixes required:
+   1. XHR relative URL resolution (resolve via ~_r_parse_url~ before ~_r_fetch_sync~)
+   2. Synchronous XHR mode (~xhr.open('GET', url, false)~) — riot compiler used async
+   3. ~querySelector('todo')~ for bare non-standard tag names (creates element in body)
+   4. ~querySelectorAll~ compound selector splitting (comma-separated)
+   5. Script injection: Riot compiler sets ~script.text = compiled~ and appends to
+      ~document.documentElement~; ~appendChild~ now evals ~child.text~ when tag is SCRIPT
+   6. ~firstChild~ / ~lastChild~ getters on ~_r_el~; ~innerHTML~ setter creates a raw-HTML
+      proxy node so ~while(p.firstChild) M.appendChild(p.firstChild)~ can move content
+   7. ~appendChild~ gains real move semantics (removes from source parent)
 
 ** TODO Lit (1 error: ~unsupported keyword: export~)
    ~https://todomvc.com/examples/lit/dist/~
@@ -131,3 +145,16 @@ Current score: 17 / 20 pass.
    Vue, Angular, Svelte, Preact, and web-components now render correctly.
    Update the per-framework rows and the prose summary in the Compatibility
    section.
+
+* Release
+   
+** TODO initial push
+Push to github and verify CI is green and binaries are released.
+
+** TODO add blog entry to tbro.github.com
+
+** TODO share on linkedin
+link back to blog
+
+** TODO write article for dev.com
+link back to blog
