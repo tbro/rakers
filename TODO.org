@@ -141,7 +141,7 @@ Current score: 21 / 23 pass.
 
 * Documentation
 
-** TODO Update README compatibility table
+** DONE Update README compatibility table
    Vue, Angular, Svelte, Preact, and web-components now render correctly.
    Update the per-framework rows and the prose summary in the Compatibility
    section.

@@ -1,10 +1,10 @@
 # rakers
 
-A lightweight, zero-dependency scraping tool for SSR sites and simple React
-SPAs, where startup latency (milliseconds vs. 1-2 seconds) and memory footprint
+A lightweight, zero-dependency scraping tool for SSR sites and JavaScript SPAs,
+where startup latency (milliseconds vs. 1-2 seconds) and memory footprint
 (~10 MB vs. ~300 MB) matter more than compatibility breadth.
 
-`rakers` renders JavaScript into HTML. Give it an HTML file, a URL, or a bare JS script and it returns the post-execution HTML — including content rendered by React, Vue, and other JS frameworks.
+`rakers` renders JavaScript into HTML. Give it an HTML file, a URL, or a bare JS script and it returns the post-execution HTML — including content rendered by React, Vue, Angular, Svelte, Preact, Mithril, Elm, Riot, and other JS frameworks.
 
 Built on [html5ever](https://github.com/servo/html5ever) (Servo's HTML5 parser) with a choice of JS engine: [QuickJS](https://bellard.org/quickjs/) via [rquickjs](https://github.com/DelSkayn/rquickjs) (default) or [boa_engine](https://github.com/boa-dev/boa) (pure-Rust, no C compiler required).
 
@@ -176,13 +176,14 @@ cargo test --test integration
 
 The following globals are stubbed so typical JS bundles run without errors:
 
-- **`document`** — `createElement`, `getElementById`, `querySelector`, `body`, `head`, `currentScript`, and the full DOM manipulation API (`appendChild`, `insertBefore`, `setAttribute`, `innerHTML`, etc.)
-- **`window.location`** — all fields (`href`, `pathname`, `hostname`, `protocol`, `host`, `port`, `search`, `hash`, `origin`) are parsed from the page URL passed to rakers; `assign`, `replace`, and `reload` are no-ops
+- **`document`** — `createElement`, `getElementById`, `querySelector` / `querySelectorAll` (including compound comma-separated selectors and `script[type="X"]` queries), `body`, `head`, `currentScript`, and the full DOM manipulation API (`appendChild` with move semantics, `insertBefore`, `removeChild`, `setAttribute`, `innerHTML`, `firstChild`, `lastChild`, `childNodes`, etc.)
+- **`window.location`** — all fields (`href`, `pathname`, `hostname`, `protocol`, `host`, `port`, `search`, `hash`, `origin`) are parsed from the page URL; setting `hash` fires `onhashchange` via the deferred-callback queue; `assign`, `replace`, and `reload` are no-ops
 - **`window.history`** — `pushState` and `replaceState` update `history.state`; navigation methods are no-ops
 - **`window`** — `navigator`, `screen`, `performance`, `localStorage`, `sessionStorage`, `matchMedia`, `getComputedStyle`, and all standard event/observer constructors
 - **`URL` / `URLSearchParams`** — relative URL resolution against the page URL; `searchParams` with full `get`/`set`/`has`
 - **`fetch`** — returns `Promise.resolve(response)` with an empty 200 OK body; `.then()` chains run, apps don't crash, but no data is loaded
-- **`XMLHttpRequest`** — `send()` schedules `onload` / `onreadystatechange` callbacks with `status=200` and empty `responseText`; they fire during the deferred-callback flush pass
+- **`XMLHttpRequest`** — synchronous mode (`open(method, url, false)`) fetches via the same HTTP client as the main page fetch; async mode schedules `onload` / `onreadystatechange` callbacks with the real response body; they fire during the deferred-callback flush pass
+- **Script injection** — `appendChild` evals `child.text` when the child is a `<script>` element, supporting compilers (e.g. Riot 2.x) that register components via dynamic script injection
 - **`DOMException` / `customElements`** — Web Components registry and DOM exception constructor
 - **`process`** — Node.js-style globals for webpack/Vite bundler compatibility
 - **Timers** — `setTimeout`, `setInterval`, `requestAnimationFrame`, `queueMicrotask`, and `MessageChannel` callbacks are collected and flushed after scripts finish
@@ -241,10 +242,25 @@ Tested against real-world sites with rquickjs:
 | tailwindcss.com | Next.js (SSR) | ✓ no errors |
 | remix.run | Remix (SSR) | ✓ no errors |
 | jsbench.me | React SPA | ✓ full render |
-| todomvc.com/examples/react | React SPA | ✓ full render |
-| todomvc.com/examples/react-redux | React+Redux SPA | ✓ full render |
 | babylonbee.com | Cloudflare Rocket Loader | ✓ articles intact |
 | linear.app | Next.js | ✓ renders (1 minor error) |
 | github.com | Custom SSR | ✓ renders (4 minor errors) |
 
-A full sweep of all 20 TodoMVC examples runs automatically on every push via the `todomvc-compat` CI job.
+### TodoMVC sweep
+
+21 of 23 [TodoMVC](https://todomvc.com) examples render correctly. The sweep runs automatically on every push via the `todomvc-compat` CI job.
+
+| Framework | Result |
+|-----------|--------|
+| React | ✓ full render |
+| React + Redux | ✓ full render |
+| Vue | ✓ full render |
+| Preact | ✓ full render |
+| Svelte | ✓ full render |
+| Angular | ✓ full render |
+| Mithril | ✓ full render |
+| Elm | ✓ full render |
+| Riot | ✓ template rendered |
+| Backbone, KnockoutJS, jQuery, Dojo, Aurelia, Backbone Marionette, Vanilla ES5/ES6, Web Components | ✓ prerendered content preserved |
+| Lit | ✗ native ES-module bundle (no IIFE fallback) — needs a full module loader |
+| Ember | ✗ reads `<meta name="…/config/environment">` before boot — needs meta-tag parsing |
