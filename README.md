@@ -1,6 +1,6 @@
 # rakers
 
-A lightweight, single-binary scraping tool for SSR sites and JavaScript SPAs,
+A lightweight, single-binary scraping tool for JavaScript SPAs and SSR sites,
 where startup latency (milliseconds vs. 1-2 seconds) and memory footprint
 (~10 MB vs. ~300 MB) matter more than compatibility breadth.
 
