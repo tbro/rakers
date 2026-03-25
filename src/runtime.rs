@@ -15,21 +15,24 @@ compile_error!("Enable exactly one JS engine feature: 'boa' or 'rquickjs'");
 // The JS bootstrap is embedded at compile time; `__HREF__` is substituted at runtime.
 const BOOTSTRAP_TEMPLATE: &str = include_str!("bootstrap.js");
 
-// Script run after user scripts to flush deferred callbacks and read the JS DOM state back.
-const READBACK_JS: &str = r#"
+// Flush one batch of _r_timers; returns the number of timers remaining after the flush.
+// Called in a Rust loop so execute_pending_job() can drain Promise microtasks between passes.
+const TIMER_FLUSH_JS: &str = r#"
 (function() {
-    // Flush deferred callbacks (setTimeout / requestAnimationFrame / MessageChannel / queueMicrotask).
-    // Each flush pass can enqueue more callbacks; cap total iterations to avoid infinite loops.
-    var maxPasses = 64;
-    for (var pass = 0; pass < maxPasses && _r_timers.length > 0; pass++) {
-        var batch = _r_timers.splice(0, _r_timers.length);
-        for (var i = 0; i < batch.length; i++) {
-            try { batch[i](); } catch(e) {
-                if (typeof console !== 'undefined') console.error('[rakers timer error]', e && (e.message || String(e)));
-            }
+    if (_r_timers.length === 0) return 0;
+    var batch = _r_timers.splice(0, _r_timers.length);
+    for (var i = 0; i < batch.length; i++) {
+        try { batch[i](); } catch(e) {
+            if (typeof console !== 'undefined') console.error('[rakers timer error]', e && (e.message || String(e)));
         }
     }
+    return _r_timers.length;
+})()
+"#;
 
+// Read the rendered DOM state after all timers and microtasks have been flushed.
+const READBACK_JS: &str = r#"
+(function() {
     var body = document.body && document.body.innerHTML;
     if (body) return body;
     // If scripts wrote into registry elements but never appended them to body,
@@ -69,7 +72,7 @@ mod boa_rt {
         static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
     }
 
-    /// A sandboxed JavaScript execution context backed by boa_engine.
+    /// A sandboxed JavaScript execution context.
     pub struct JsRuntime;
 
     impl JsRuntime {
@@ -85,7 +88,7 @@ mod boa_rt {
         ///
         /// Errors from individual scripts are printed to stderr and skipped; the method
         /// only returns `Err` if the bootstrap itself fails to evaluate.
-        pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
+        pub fn execute(&self, scripts: &[String], page_url: Option<&str>, _cfg: &crate::HttpConfig) -> anyhow::Result<()> {
             let mut ctx = Context::default();
             ctx.runtime_limits_mut().set_stack_size_limit(65536);
             ctx.runtime_limits_mut().set_recursion_limit(65536);
@@ -100,6 +103,17 @@ mod boa_rt {
                 if let Err(e) = ctx.eval(Source::from_bytes(script.as_bytes())) {
                     eprintln!("[js error] {:?}", e);
                 }
+            }
+
+            // Flush timers in passes (boa has no separate microtask drain API).
+            for _ in 0..64 {
+                let remaining: i32 = ctx
+                    .eval(Source::from_bytes(super::TIMER_FLUSH_JS.as_bytes()))
+                    .ok()
+                    .and_then(|v| v.to_number(&mut ctx).ok())
+                    .map(|n| n as i32)
+                    .unwrap_or(0);
+                if remaining == 0 { break; }
             }
 
             let body_result = ctx.eval(Source::from_bytes(super::READBACK_JS.as_bytes()));
@@ -134,7 +148,7 @@ mod boa_rt {
         }
     }
 
-    /// Register `document.write` and `document.writeln` on the boa context.
+    /// Register `document.write` and `document.writeln`.
     fn setup_document(ctx: &mut Context) -> anyhow::Result<()> {
         let mut init = ObjectInitializer::new(ctx);
         init.function(
@@ -153,7 +167,7 @@ mod boa_rt {
         Ok(())
     }
 
-    /// Register `console.log`, `console.warn`, and `console.error` on the boa context.
+    /// Register `console.log`, `console.warn`, and `console.error`.
     fn setup_console(ctx: &mut Context) -> anyhow::Result<()> {
         let mut init = ObjectInitializer::new(ctx);
         init.function(
@@ -226,9 +240,6 @@ mod quickjs_rt {
         loader::{Loader, Resolver},
     };
 
-    // Per-script wall-clock timeout.  Scripts that run longer are interrupted and
-    // reported as [js error] so the render pipeline can continue with the next script.
-    const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30);
 
     struct StubModuleSystem;
 
@@ -245,11 +256,15 @@ mod quickjs_rt {
     }
 
     thread_local! {
-        static WRITTEN:         RefCell<String>           = const { RefCell::new(String::new()) };
-        static LOGGED:          RefCell<Vec<String>>      = const { RefCell::new(Vec::new()) };
-        static BODY_INNER_HTML: RefCell<String>           = const { RefCell::new(String::new()) };
+        static WRITTEN:         RefCell<String>                        = const { RefCell::new(String::new()) };
+        static LOGGED:          RefCell<Vec<String>>                   = const { RefCell::new(Vec::new()) };
+        static BODY_INNER_HTML: RefCell<String>                        = const { RefCell::new(String::new()) };
         // Deadline for the currently-executing script; None means no limit active.
-        static SCRIPT_DEADLINE: RefCell<Option<Instant>>  = RefCell::new(None);
+        static SCRIPT_DEADLINE: RefCell<Option<Instant>>               = RefCell::new(None);
+        // HttpConfig fields stored so the _r_fetch_sync native function can use them.
+        static XHR_UA:          RefCell<Option<String>>                = RefCell::new(None);
+        static XHR_HEADERS:     RefCell<Vec<(String, String)>>         = const { RefCell::new(Vec::new()) };
+        static XHR_PROXY:       RefCell<Option<String>>                = RefCell::new(None);
     }
 
     fn set_deadline(timeout: Duration) {
@@ -260,17 +275,12 @@ mod quickjs_rt {
         SCRIPT_DEADLINE.with(|d| *d.borrow_mut() = None);
     }
 
-    /// A sandboxed JavaScript execution context backed by QuickJS (via rquickjs).
+    /// A sandboxed JavaScript execution context.
     pub struct JsRuntime {
         timeout: Option<Duration>,
     }
 
     impl JsRuntime {
-        /// Create a new runtime with the default 30-second per-script timeout.
-        pub fn new() -> Self {
-            Self::with_timeout(SCRIPT_TIMEOUT)
-        }
-
         /// Create a new runtime with a custom per-script timeout (useful in tests).
         pub fn with_timeout(timeout: Duration) -> Self {
             WRITTEN.with(|w| w.borrow_mut().clear());
@@ -293,7 +303,11 @@ mod quickjs_rt {
         /// assignments to undeclared globals are allowed, as used by SvelteKit and webpack.
         /// Errors from individual scripts are printed to stderr and skipped; the method
         /// only returns `Err` if the bootstrap itself fails to evaluate.
-        pub fn execute(&self, scripts: &[String], page_url: Option<&str>) -> anyhow::Result<()> {
+        pub fn execute(&self, scripts: &[String], page_url: Option<&str>, cfg: &crate::HttpConfig) -> anyhow::Result<()> {
+            XHR_UA.with(|u| *u.borrow_mut() = cfg.user_agent.clone());
+            XHR_HEADERS.with(|h| *h.borrow_mut() = cfg.headers.clone());
+            XHR_PROXY.with(|p| *p.borrow_mut() = cfg.proxy.clone());
+
             let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
             rt.set_loader(StubModuleSystem, StubModuleSystem);
 
@@ -316,6 +330,7 @@ mod quickjs_rt {
             ctx.with(|ctx| -> anyhow::Result<()> {
                 setup_document(ctx.clone())?;
                 setup_console(ctx.clone())?;
+                setup_xhr_fetch(ctx.clone())?;
 
                 let sloppy = || {
                     let mut o = EvalOptions::default();
@@ -333,15 +348,41 @@ mod quickjs_rt {
                     clear_deadline();
                     if result.is_err() {
                         let exc = ctx.catch();
-                        let msg = exc
-                            .as_exception()
-                            .and_then(|e| e.message())
-                            .unwrap_or_else(|| "unknown exception".into());
-                        eprintln!("[js error] {}", msg);
+                        if let Some(e) = exc.as_exception() {
+                            let msg = e.message().unwrap_or_else(|| "unknown exception".into());
+                            eprintln!("[js error] {}", msg);
+                            if crate::is_verbose() {
+                                if let Some(stack) = e.stack() {
+                                    eprintln!("[js stack] {}", stack);
+                                }
+                            }
+                        }
                     }
-                    // Drain the QuickJS pending-job queue (Promise microtasks) after each
-                    // script so that .then() chains fire before the next script runs.
+                    // Drain Promise microtasks after each script so .then() chains fire
+                    // before the next script runs.
                     while ctx.execute_pending_job() {}
+                }
+
+                // Flush _r_timers in a Rust loop, draining Promise microtasks between passes.
+                // Ember/Glimmer's Backburner run loop schedules rendering via Promise chains,
+                // so both queues must be drained together until both are empty.
+                let mut consecutive_empty = 0u32;
+                for _ in 0..128u32 {
+                    if let Some(t) = self.timeout { set_deadline(t); }
+                    let remaining: i32 = ctx
+                        .eval_with_options::<Value, _>(super::TIMER_FLUSH_JS, sloppy())
+                        .ok()
+                        .and_then(|v| v.as_int())
+                        .unwrap_or(0);
+                    clear_deadline();
+                    let mut had_jobs = false;
+                    while ctx.execute_pending_job() { had_jobs = true; }
+                    if remaining == 0 && !had_jobs {
+                        consecutive_empty += 1;
+                        if consecutive_empty >= 3 { break; }
+                    } else {
+                        consecutive_empty = 0;
+                    }
                 }
 
                 if let Some(t) = self.timeout { set_deadline(t); }
@@ -380,7 +421,7 @@ mod quickjs_rt {
         }
     }
 
-    /// Register `document.write` and `document.writeln` on the QuickJS context.
+    /// Register `document.write` and `document.writeln`.
     fn setup_document(ctx: Ctx<'_>) -> anyhow::Result<()> {
         let doc = Object::new(ctx.clone()).map_err(|e| anyhow!("{:?}", e))?;
 
@@ -414,7 +455,7 @@ mod quickjs_rt {
         Ok(())
     }
 
-    /// Register `console.log`, `console.warn`, and `console.error` on the QuickJS context.
+    /// Register `console.log`, `console.warn`, and `console.error`.
     fn setup_console(ctx: Ctx<'_>) -> anyhow::Result<()> {
         use rquickjs::function::Rest;
 
@@ -427,18 +468,61 @@ mod quickjs_rt {
         })
         .map_err(|e| anyhow!("{:?}", e))?;
 
-        console
-            .set("log", log_fn.clone())
+        let noop_fn = Function::new(ctx.clone(), || Ok::<(), rquickjs::Error>(()))
             .map_err(|e| anyhow!("{:?}", e))?;
-        console
-            .set("warn", log_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
-        console
-            .set("error", log_fn)
-            .map_err(|e| anyhow!("{:?}", e))?;
+
+        console.set("log",      log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("warn",     log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("error",    log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("info",     log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("debug",    log_fn).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("table",    noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("group",    noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("groupEnd", noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("groupCollapsed", noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("time",     noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("timeEnd",  noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        console.set("assert",   noop_fn).map_err(|e| anyhow!("{:?}", e))?;
 
         ctx.globals()
             .set("console", console)
+            .map_err(|e| anyhow!("{:?}", e))?;
+        Ok(())
+    }
+
+    /// Register `_r_fetch_sync(url)` — a synchronous HTTP GET used by the XHR stub
+    /// so frameworks that XHR-load templates (e.g. RiotJS) get real response bodies.
+    fn setup_xhr_fetch(ctx: Ctx<'_>) -> anyhow::Result<()> {
+        let fetch_fn = Function::new(ctx.clone(), |url: String| -> String {
+            let ua      = XHR_UA.with(|u| u.borrow().clone());
+            let headers = XHR_HEADERS.with(|h| h.borrow().clone());
+            let proxy   = XHR_PROXY.with(|p| p.borrow().clone());
+            if !url.starts_with("http://") && !url.starts_with("https://") {
+                return String::new();
+            }
+            let mut builder = ureq::AgentBuilder::new();
+            if let Some(ref proxy_url) = proxy {
+                if let Ok(p) = ureq::Proxy::new(proxy_url) {
+                    builder = builder.proxy(p);
+                }
+            }
+            let agent = builder.build();
+            let mut req = agent.get(&url);
+            if let Some(ref ua_str) = ua {
+                req = req.set("User-Agent", ua_str);
+            }
+            for (name, value) in &headers {
+                req = req.set(name, value);
+            }
+            match req.call() {
+                Ok(resp) => resp.into_string().unwrap_or_default(),
+                Err(_) => String::new(),
+            }
+        })
+        .map_err(|e| anyhow!("{:?}", e))?;
+
+        ctx.globals()
+            .set("_r_fetch_sync", fetch_fn)
             .map_err(|e| anyhow!("{:?}", e))?;
         Ok(())
     }

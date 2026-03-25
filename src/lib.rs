@@ -63,15 +63,30 @@ fn json_escape(s: &str) -> String {
 }
 
 /// HTTP options applied to every outbound request made by rakers.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct HttpConfig {
     /// Value for the `User-Agent` header. `None` sends no `User-Agent`.
     pub user_agent: Option<String>,
     /// Additional headers sent with every request, in `(name, value)` form.
     pub headers: Vec<(String, String)>,
+    /// Optional proxy URL. Supports SOCKS5 (`socks5://`), SOCKS4 (`socks4://`),
+    /// and HTTP (`http://`) proxies. Use `socks5://127.0.0.1:9050` for Tor.
+    pub proxy: Option<String>,
 }
 
 impl HttpConfig {
+    /// Build a `ureq` agent with proxy configured (if any).
+    pub fn agent(&self) -> ureq::Agent {
+        let mut builder = ureq::AgentBuilder::new();
+        if let Some(ref proxy_url) = self.proxy {
+            match ureq::Proxy::new(proxy_url) {
+                Ok(proxy) => { builder = builder.proxy(proxy); }
+                Err(e) => { eprintln!("[proxy error] {proxy_url}: {e}"); }
+            }
+        }
+        builder.build()
+    }
+
     /// Apply the configured user-agent and headers to `req`, returning the modified request.
     pub fn apply(&self, req: ureq::Request) -> ureq::Request {
         let mut req = req;
@@ -110,7 +125,7 @@ fn resolve_url(src: &str, base: Option<&str>) -> Option<String> {
 /// Files that open with `import`/`export` are skipped — they are ES module entry
 /// points that require a full module loader with relative specifier resolution.
 fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
-    let body = match cfg.apply(ureq::get(url)).call() {
+    let body = match cfg.apply(cfg.agent().get(url)).call() {
         Ok(r) => r.into_string().ok()?,
         Err(e) => {
             eprintln!("[fetch error] {url}: {e}");
@@ -207,6 +222,27 @@ fn load_scripts(
     result
 }
 
+/// Build a JS snippet that declares `_r_meta`, exposing all `<meta name=… content=…>`
+/// elements so `document.querySelector('meta[name="X"]')` can look them up.
+fn build_meta_script(meta: std::collections::HashMap<String, String>) -> String {
+    if meta.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("var _r_meta = {");
+    for (name, content) in &meta {
+        let name_esc    = name.replace('\\', "\\\\").replace('\'', "\\'");
+        let content_esc = content.replace('\\', "\\\\").replace('\'', "\\'");
+        out.push_str(&format!(
+            "'{}':{{name:'{}',content:'{}',\
+            getAttribute:function(n){{return n==='content'?this.content:n==='name'?this.name:null;}},\
+            hasAttribute:function(n){{return n==='content'||n==='name';}}}},",
+            name_esc, name_esc, content_esc
+        ));
+    }
+    out.push_str("};");
+    out
+}
+
 /// Parse `input`, execute its scripts, and return the rendered HTML.
 ///
 /// `is_js` — when `true`, `input` is treated as a bare JS snippet and wrapped in a
@@ -235,13 +271,17 @@ pub fn render(
     };
 
     let doc = dom::parse(&html);
-    let scripts = load_scripts(doc.extract_scripts(), page_url, cfg, max_scripts);
+    let meta_script = build_meta_script(doc.collect_meta());
+    let mut scripts = load_scripts(doc.extract_scripts(), page_url, cfg, max_scripts);
+    if !meta_script.is_empty() {
+        scripts.insert(0, meta_script);
+    }
 
     let rt = match script_timeout {
         Some(t) => runtime::JsRuntime::with_timeout(t),
         None    => runtime::JsRuntime::without_timeout(),
     };
-    rt.execute(&scripts, page_url)?;
+    rt.execute(&scripts, page_url, cfg)?;
 
     for msg in rt.logged_messages() {
         if is_verbose() { eprintln!("[console] {msg}"); }
@@ -364,7 +404,7 @@ fn raw_body_content_len(html: &str) -> usize {
 ///
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
 pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
-    let body = cfg.apply(ureq::get(url)).call()?.into_string()?;
+    let body = cfg.apply(cfg.agent().get(url)).call()?.into_string()?;
     render(&body, false, Some(url), cfg, clean, None, Some(Duration::from_secs(30)))
 }
 
@@ -412,8 +452,8 @@ mod tests {
     #[test]
     fn console_messages_captured() {
         let js = r#"console.log("hello", "world"); console.warn("oops");"#;
-        let rt = runtime::JsRuntime::new();
-        rt.execute(&[js.to_owned()], None).unwrap();
+        let rt = runtime::JsRuntime::with_timeout(std::time::Duration::from_secs(30));
+        rt.execute(&[js.to_owned()], None, &HttpConfig::default()).unwrap();
         let msgs = rt.logged_messages();
         assert_eq!(msgs[0], "hello world");
         assert_eq!(msgs[1], "oops");
@@ -590,6 +630,7 @@ mod tests {
                 "document.write('<p>survived</p>');".to_owned(),
             ],
             None,
+            &HttpConfig::default(),
         )
         .unwrap();
         assert!(
@@ -717,5 +758,37 @@ mod tests {
         assert_eq!(single_reexport_target("import 'react'"), None);
         // Regular IIFE bundle — not a module
         assert_eq!(single_reexport_target("(function(){ var x = 1; })()"), None);
+    }
+
+    #[test]
+    fn proxy_config_does_not_break_inline_rendering() {
+        let cfg = HttpConfig {
+            proxy: Some("socks5://127.0.0.1:9050".to_owned()),
+            ..Default::default()
+        };
+        let html = r#"<html><body><script>document.write('<p>ok</p>');</script></body></html>"#;
+        let out = render(html, false, None, &cfg, false, None, None).unwrap();
+        assert!(out.contains("<p>ok</p>"), "inline script renders with proxy configured");
+    }
+
+    #[test]
+    fn proxy_fetch_failure_is_non_fatal() {
+        // Port 1 is reserved and will always refuse the connection immediately.
+        let cfg = HttpConfig {
+            proxy: Some("socks5://127.0.0.1:1".to_owned()),
+            ..Default::default()
+        };
+        // A script that tries to XHR-load an external URL; the fetch will fail
+        // through the dead proxy but the render should complete without panicking.
+        let html = concat!(
+            "<html><body><script>",
+            "var x = new XMLHttpRequest();",
+            "x.open('GET','http://example.com/data.json',false);",
+            "try { x.send(); } catch(e) {}",
+            "document.write('<p>done</p>');",
+            "</script></body></html>"
+        );
+        let out = render(html, false, None, &cfg, false, None, None).unwrap();
+        assert!(out.contains("<p>done</p>"), "render completes despite proxy failure");
     }
 }

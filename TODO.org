@@ -2,7 +2,7 @@
 #+DATE: 2025-10-01
 
 * Existing items
-** TODO remove extraneous info from doc comments
+** DONE remove extraneous info from doc comments
    We don't need to document if we used external dependencies for a specific function.
 ** DONE document which frameworks require which stubs / APIs
    Use inline comments for this.
@@ -46,8 +46,23 @@
    when the ~servo~ crate is stable on crates.io.
 
    
-** TODO Create a rest API with ruoughly the same functionality as the CLI
-probably use Axum for this, but open to suggestions.
+** CANCELLED Create a rest API with roughly the same functionality as the CLI
+probably use Axum for this, but open to suggestions. this should have a feature
+flag which would be disabled by default. We should also add an end 2 end test
+that tests both the cli and the API using a `demo.html` we keep in the git
+repo. CLI and rest API should give the same results. Reuse as much code as
+possible.
+
+** CANCELLED find a free host provider
+find a place host API (previous TODO). Preferably free. Consider heroku and
+shuttle.dev.
+
+** DONE the the user to clone repo before installing in README
+this goes in `Install` section
+
+** DONE ensure we support SOCKS proxying
+we should be able make requests over tor
+
 
 * TodoMVC compatibility – remaining 2 failures
 
@@ -103,7 +118,7 @@ Current score: 21 / 23 pass.
       proxy node so ~while(p.firstChild) M.appendChild(p.firstChild)~ can move content
    7. ~appendChild~ gains real move semantics (removes from source parent)
 
-** TODO Lit (1 error: ~unsupported keyword: export~)
+** DONE Lit (1 error: ~unsupported keyword: export~)
    ~https://todomvc.com/examples/lit/dist/~
 
    The Lit TodoMVC bundle is a native ES module (~export const~ at top level).
@@ -113,24 +128,27 @@ Current score: 21 / 23 pass.
    Approach: document the limitation in the README.  The Lit example is the
    only TodoMVC case that ships a naked ES-module bundle with no IIFE fallback.
 
-** TODO Ember (1 error: meta config tag missing)
+** DONE Ember (1 error: meta config tag missing)
    ~https://todomvc.com/examples/emberjs/todomvc/dist/~
 
    Ember reads its environment config from a ~<meta name="todomvc/config/environment">~
-   tag.  ~document.querySelector('meta[name="..."]')~ returns ~null~ in our
-   stub, so Ember cannot boot.
+   tag.  Fixed by collecting ~<meta>~ tags in Rust (~dom.rs~), exposing them via
+   ~_r_meta~ in JS, and extending ~document.querySelector~ to resolve
+   ~meta[name="X"]~ lookups against ~_r_meta~.
 
-   Approach: during HTML parse in ~dom.rs~, collect all ~<meta>~ tags into a
-   map and expose them via a ~_r_meta~ JS object.  Extend
-   ~document.querySelector~ to look up ~meta[name="X"]~ in ~_r_meta~ and
-   return a stub element with the correct ~content~ attribute.
+   The final blocker was Ember 5.x's ~hasDOM~ check in the webpack bundle
+   (module 7513): it requires ~self.constructor === Window~.  In QuickJS the
+   global object's ~constructor~ defaults to ~Object~, so ~hasDOM = false~ and
+   the Glimmer renderer never initialised.  Fixed by overriding
+   ~window.constructor~ to point at ~window.Window~ in bootstrap.js.
+
+   Score: 19 / 20 pass (Lit is the only remaining failure).
 
 * Code quality
 
-** TODO Remove dead code in runtime.rs
+** DONE Remove dead code in runtime.rs
    ~SCRIPT_TIMEOUT~ constant and ~JsRuntime::new()~ are unused (replaced by
-   ~with_timeout~ / ~without_timeout~).  Delete or rename to suppress
-   the dead_code warnings.
+   ~with_timeout~ / ~without_timeout~).  Removed both.
 
 ** DONE Fix false-positive test ~fetch_stub_resolves_then_chain~
    The assertion ~out.contains("<p>fetch-ok</p>")~ passes because the string
@@ -148,6 +166,9 @@ Current score: 21 / 23 pass.
 
 * Release
    
+** TODO publish to crates.io
+Publish the ~rakers~ crate so it can be used as a library dependency.
+
 ** TODO initial push
 Push to github and verify CI is green and binaries are released.
 

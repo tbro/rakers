@@ -78,6 +78,12 @@ struct Cli {
     /// All matching elements are printed, each separated by a newline.
     #[arg(long, value_name = "SELECTOR")]
     selector: Option<String>,
+
+    /// Proxy URL for all outbound HTTP requests (page fetch, script fetches, XHR).
+    /// Supports SOCKS5 (socks5://), SOCKS4 (socks4://), and HTTP (http://) proxies.
+    /// Example: --proxy socks5://127.0.0.1:9050 (routes traffic through Tor).
+    #[arg(long, value_name = "URL")]
+    proxy: Option<String>,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -99,6 +105,7 @@ fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
     Ok(HttpConfig {
         user_agent: cli.user_agent.clone(),
         headers,
+        proxy: cli.proxy.clone(),
     })
 }
 
@@ -108,7 +115,7 @@ fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
 /// from disk; `is_js` is `true` when the file extension is `.js`.
 fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
     if is_url(input) {
-        let body = cfg.apply(ureq::get(input)).call()?.into_string()?;
+        let body = cfg.apply(cfg.agent().get(input)).call()?.into_string()?;
         Ok((body, false))
     } else {
         let content = fs::read_to_string(input)?;

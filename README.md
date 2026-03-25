@@ -10,13 +10,16 @@ Built on [html5ever](https://github.com/servo/html5ever) (Servo's HTML5 parser) 
 
 ## Install
 
-```sh
-# Default build (QuickJS engine — requires a C compiler)
-cargo install --path .
+    git clone https://github.com/tbro/rakers && cd rakers
 
-# boa engine (pure Rust, no C compiler required)
-cargo install --path . --no-default-features --features boa
-```
+### Default build (QuickJS engine — requires a C compiler)
+
+    cargo install --path .
+
+### boa engine (pure Rust, no C compiler required)
+
+    cargo install --path . --no-default-features --features boa
+
 
 ## Usage
 
@@ -248,7 +251,7 @@ Tested against real-world sites with rquickjs:
 
 ### TodoMVC sweep
 
-21 of 23 [TodoMVC](https://todomvc.com) examples render correctly. The sweep runs automatically on every push via the `todomvc-compat` CI job.
+19 of 20 [TodoMVC](https://todomvc.com) examples render correctly. The sweep runs automatically on every push via the `todomvc-compat` CI job.
 
 | Framework | Result |
 |-----------|--------|
@@ -261,6 +264,6 @@ Tested against real-world sites with rquickjs:
 | Mithril | ✓ full render |
 | Elm | ✓ full render |
 | Riot | ✓ template rendered |
+| Ember | ✓ app shell rendered |
 | Backbone, KnockoutJS, jQuery, Dojo, Aurelia, Backbone Marionette, Vanilla ES5/ES6, Web Components | ✓ prerendered content preserved |
 | Lit | ✗ native ES-module bundle (no IIFE fallback) — needs a full module loader |
-| Ember | ✗ reads `<meta name="…/config/environment">` before boot — needs meta-tag parsing |

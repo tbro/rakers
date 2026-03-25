@@ -12,7 +12,7 @@ rquickjs = ["dep:rquickjs"]
 anyhow = "1"
 scraper = "0.27"
 similar = "2"
-ureq = "2"
+ureq = { version = "2", features = ["socks-proxy"] }
 url = "2"
 clap = { version = "4", features = ["derive"] }
 html5ever = "0.27"
