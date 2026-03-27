@@ -2,6 +2,16 @@
 name = "rakers"
 version = "0.1.0"
 edition = "2024"
+description = "Lightweight headless JS renderer — executes JavaScript and returns the rendered HTML"
+license = "MIT"
+repository = "https://github.com/tbro/rakers"
+homepage = "https://github.com/tbro/rakers"
+documentation = "https://docs.rs/rakers"
+readme = "README.md"
+keywords = ["javascript", "headless", "renderer", "scraping", "html"]
+categories = ["web-programming", "command-line-utilities"]
+authors = ["tbro <tim@toma.tl>"]
+exclude = ["TODO.org", "scripts/", ".claude/"]
 
 [features]
 default = ["rquickjs"]

@@ -166,7 +166,7 @@ Current score: 21 / 23 pass.
 
 * Release
    
-** TODO publish to crates.io
+** DONE publish to crates.io
 Publish the ~rakers~ crate so it can be used as a library dependency.
 
 ** TODO initial push
