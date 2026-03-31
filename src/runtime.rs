@@ -76,8 +76,15 @@ mod boa_rt {
     pub struct JsRuntime;
 
     impl JsRuntime {
-        /// Create a new runtime, clearing any leftover thread-local state from a previous run.
-        pub fn new() -> Self {
+        /// Create a new runtime with a custom per-script timeout.
+        ///
+        /// Boa has no interrupt-handler API, so the timeout is accepted but not enforced.
+        pub fn with_timeout(_timeout: std::time::Duration) -> Self { Self::new() }
+
+        /// Create a new runtime with no per-script timeout.
+        pub fn without_timeout() -> Self { Self::new() }
+
+        fn new() -> Self {
             WRITTEN.with(|w| w.borrow_mut().clear());
             LOGGED.with(|l| l.borrow_mut().clear());
             BODY_INNER_HTML.with(|b| b.borrow_mut().clear());
