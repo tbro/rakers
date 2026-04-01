@@ -166,8 +166,10 @@ Current score: 21 / 23 pass.
 
 * Release
    
-** DONE publish to crates.io
+** TODO publish to crates.io
 Publish the ~rakers~ crate so it can be used as a library dependency.
+Metadata (description, license, keywords, exclude) is ready. Blocked on
+initial GitHub push; then run ~cargo publish~ with a crates.io API token.
 
 ** TODO initial push
 Push to github and verify CI is green and binaries are released.
