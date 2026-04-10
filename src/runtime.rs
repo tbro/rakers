@@ -272,6 +272,8 @@ mod quickjs_rt {
         static XHR_UA:          RefCell<Option<String>>                = RefCell::new(None);
         static XHR_HEADERS:     RefCell<Vec<(String, String)>>         = const { RefCell::new(Vec::new()) };
         static XHR_PROXY:       RefCell<Option<String>>                = RefCell::new(None);
+        // Per-request timeout applied to XHR fetches; mirrors the script timeout.
+        static XHR_TIMEOUT:     RefCell<Option<Duration>>              = RefCell::new(None);
     }
 
     fn set_deadline(timeout: Duration) {
@@ -314,6 +316,7 @@ mod quickjs_rt {
             XHR_UA.with(|u| *u.borrow_mut() = cfg.user_agent.clone());
             XHR_HEADERS.with(|h| *h.borrow_mut() = cfg.headers.clone());
             XHR_PROXY.with(|p| *p.borrow_mut() = cfg.proxy.clone());
+            XHR_TIMEOUT.with(|t| *t.borrow_mut() = self.timeout);
 
             let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
             rt.set_loader(StubModuleSystem, StubModuleSystem);
@@ -504,6 +507,7 @@ mod quickjs_rt {
             let ua      = XHR_UA.with(|u| u.borrow().clone());
             let headers = XHR_HEADERS.with(|h| h.borrow().clone());
             let proxy   = XHR_PROXY.with(|p| p.borrow().clone());
+            let timeout = XHR_TIMEOUT.with(|t| *t.borrow());
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 return String::new();
             }
@@ -512,6 +516,9 @@ mod quickjs_rt {
                 if let Ok(p) = ureq::Proxy::new(proxy_url) {
                     builder = builder.proxy(p);
                 }
+            }
+            if let Some(dur) = timeout {
+                builder = builder.timeout(dur);
             }
             let agent = builder.build();
             let mut req = agent.get(&url);
