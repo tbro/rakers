@@ -72,6 +72,10 @@ pub struct HttpConfig {
     /// Optional proxy URL. Supports SOCKS5 (`socks5://`), SOCKS4 (`socks4://`),
     /// and HTTP (`http://`) proxies. Use `socks5://127.0.0.1:9050` for Tor.
     pub proxy: Option<String>,
+    /// When `true`, custom `-H` headers are also forwarded on XHR requests
+    /// the page's JavaScript initiates. Defaults to `false` to avoid leaking
+    /// credentials to cross-origin destinations controlled by page scripts.
+    pub forward_headers: bool,
 }
 
 impl HttpConfig {

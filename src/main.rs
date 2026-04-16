@@ -84,6 +84,12 @@ struct Cli {
     /// Example: --proxy socks5://127.0.0.1:9050 (routes traffic through Tor).
     #[arg(long, value_name = "URL")]
     proxy: Option<String>,
+
+    /// Forward custom -H headers on XHR requests made by page scripts.
+    /// By default headers are withheld from XHR to avoid leaking credentials
+    /// to cross-origin destinations the page JavaScript controls.
+    #[arg(long)]
+    forward_headers: bool,
 }
 
 /// Return `true` if `s` is an `http://` or `https://` URL.
@@ -106,6 +112,7 @@ fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
         user_agent: cli.user_agent.clone(),
         headers,
         proxy: cli.proxy.clone(),
+        forward_headers: cli.forward_headers,
     })
 }
 

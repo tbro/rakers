@@ -58,8 +58,9 @@ rakers https://example.com -o rendered.html
 | `--timeout SECS` | Per-script wall-clock timeout in seconds; fractions allowed (e.g. `0.5`). Default: `30` |
 | `--no-timeout` | Remove the per-script timeout entirely (conflicts with `--timeout`) |
 | `--verbose` | Print informational messages to stderr: `[fetch]`, `[skip]`, `[console]`, `[module-shim]` |
+| `--forward-headers` | Forward custom `-H` headers on XHR requests made by page scripts (off by default — see note below) |
 
-> **Note on custom headers:** Headers passed via `-H` (including `Authorization`, cookies, and API keys) are forwarded on *every* outbound request rakers makes — including XHR requests that the JavaScript on the page initiates. If the page loads third-party scripts or makes cross-origin XHR calls, those requests will carry your headers too. Avoid passing sensitive credentials when rendering untrusted HTML.
+> **Note on custom headers:** Headers passed via `-H` (including `Authorization`, cookies, and API keys) are sent on the page fetch and any external script fetches, but are **not** forwarded on XHR requests the page's JavaScript initiates. Use `--forward-headers` to opt in to forwarding them on XHR too — but avoid this when rendering untrusted HTML, as page scripts could trigger XHR requests to arbitrary cross-origin destinations carrying your credentials.
 
 ## How it works
 

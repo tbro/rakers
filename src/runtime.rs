@@ -273,7 +273,9 @@ mod quickjs_rt {
         static XHR_HEADERS:     RefCell<Vec<(String, String)>>         = const { RefCell::new(Vec::new()) };
         static XHR_PROXY:       RefCell<Option<String>>                = RefCell::new(None);
         // Per-request timeout applied to XHR fetches; mirrors the script timeout.
-        static XHR_TIMEOUT:     RefCell<Option<Duration>>              = RefCell::new(None);
+        static XHR_TIMEOUT:          RefCell<Option<Duration>>         = RefCell::new(None);
+        // Whether to forward custom -H headers on XHR requests (off by default).
+        static XHR_FORWARD_HEADERS:  std::cell::Cell<bool>             = const { std::cell::Cell::new(false) };
     }
 
     fn set_deadline(timeout: Duration) {
@@ -317,6 +319,7 @@ mod quickjs_rt {
             XHR_HEADERS.with(|h| *h.borrow_mut() = cfg.headers.clone());
             XHR_PROXY.with(|p| *p.borrow_mut() = cfg.proxy.clone());
             XHR_TIMEOUT.with(|t| *t.borrow_mut() = self.timeout);
+            XHR_FORWARD_HEADERS.with(|f| f.set(cfg.forward_headers));
 
             let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
             rt.set_loader(StubModuleSystem, StubModuleSystem);
@@ -504,10 +507,11 @@ mod quickjs_rt {
     /// so frameworks that XHR-load templates (e.g. RiotJS) get real response bodies.
     fn setup_xhr_fetch(ctx: Ctx<'_>) -> anyhow::Result<()> {
         let fetch_fn = Function::new(ctx.clone(), |url: String| -> String {
-            let ua      = XHR_UA.with(|u| u.borrow().clone());
-            let headers = XHR_HEADERS.with(|h| h.borrow().clone());
-            let proxy   = XHR_PROXY.with(|p| p.borrow().clone());
-            let timeout = XHR_TIMEOUT.with(|t| *t.borrow());
+            let ua             = XHR_UA.with(|u| u.borrow().clone());
+            let headers        = XHR_HEADERS.with(|h| h.borrow().clone());
+            let proxy          = XHR_PROXY.with(|p| p.borrow().clone());
+            let timeout        = XHR_TIMEOUT.with(|t| *t.borrow());
+            let forward_hdrs   = XHR_FORWARD_HEADERS.with(|f| f.get());
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 return String::new();
             }
@@ -525,8 +529,10 @@ mod quickjs_rt {
             if let Some(ref ua_str) = ua {
                 req = req.set("User-Agent", ua_str);
             }
-            for (name, value) in &headers {
-                req = req.set(name, value);
+            if forward_hdrs {
+                for (name, value) in &headers {
+                    req = req.set(name, value);
+                }
             }
             match req.call() {
                 Ok(resp) => resp.into_string().unwrap_or_default(),
