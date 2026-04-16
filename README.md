@@ -59,6 +59,8 @@ rakers https://example.com -o rendered.html
 | `--no-timeout` | Remove the per-script timeout entirely (conflicts with `--timeout`) |
 | `--verbose` | Print informational messages to stderr: `[fetch]`, `[skip]`, `[console]`, `[module-shim]` |
 
+> **Note on custom headers:** Headers passed via `-H` (including `Authorization`, cookies, and API keys) are forwarded on *every* outbound request rakers makes — including XHR requests that the JavaScript on the page initiates. If the page loads third-party scripts or makes cross-origin XHR calls, those requests will carry your headers too. Avoid passing sensitive credentials when rendering untrusted HTML.
+
 ## How it works
 
 1. Fetches the page (or reads from file/stdin)
