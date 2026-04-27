@@ -169,6 +169,7 @@ fn custom_user_agent_is_sent() {
         user_agent: Some("rakers-test/1.0".to_owned()),
         headers: vec![],
         proxy: None,
+        forward_headers: false,
     };
     let raw = ureq::get("https://httpbin.org/user-agent")
         .set("User-Agent", "rakers-test/1.0")
