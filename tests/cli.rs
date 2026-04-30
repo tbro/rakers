@@ -120,6 +120,7 @@ fn todomvc_react_renders_ui() {
 /// React SPA: server returns a ~2.7 KB skeleton; the bundle renders the full UI.
 /// Ignored under boa — it overflows the native stack on the React bundle.
 #[test]
+#[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn jsbench_url_renders_react_ui() {
     let output = cmd()

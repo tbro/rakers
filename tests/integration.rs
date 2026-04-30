@@ -12,6 +12,7 @@ fn fetch(url: &str) -> String {
 /// `<section id="root">`; the React bundle renders the full todo-app UI client-side.
 /// This is the canonical demo for rakers: dramatic before/after, zero JS errors.
 #[test]
+#[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn todomvc_react_spa_renders_ui() {
     let raw = fetch("https://todomvc.com/examples/react/dist/");
@@ -47,6 +48,7 @@ fn todomvc_react_spa_renders_ui() {
 /// ("Run") that are absent before JS executes.
 ///
 #[test]
+#[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn jsbench_react_spa_renders_ui() {
     let raw = fetch("https://jsbench.me");
@@ -87,6 +89,7 @@ fn jsbench_react_spa_renders_ui() {
 ///   - querySelector('head')          → needed by style-loader CSS injection
 /// Without those fixes the bundle crashed before mounting and produced no output.
 #[test]
+#[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn reactrouter_v5_homepage_renders() {
     let raw = fetch("https://v5.reactrouter.com/");
@@ -132,6 +135,7 @@ fn reactrouter_v5_homepage_renders() {
 /// server-rendered articles that were present in the raw HTML.
 ///
 #[test]
+#[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn babylonbee_rocket_loader_pipeline_intact() {
     let raw = fetch("https://babylonbee.com");
