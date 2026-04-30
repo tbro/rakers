@@ -35,6 +35,14 @@ pub fn parse(html: &str) -> Document {
 }
 
 impl Document {
+    /// Collect all `<meta name="…" content="…">` elements, returning a map of
+    /// `name → content`.  Used to expose Ember's config meta tag to the JS runtime.
+    pub fn collect_meta(&self) -> std::collections::HashMap<String, String> {
+        let mut map = std::collections::HashMap::new();
+        collect_meta_tags(&self.dom.document, &mut map);
+        map
+    }
+
     /// Walk the DOM and return every executable `<script>` in document order.
     ///
     /// Inline scripts carry their text content; external scripts carry the raw
@@ -76,11 +84,10 @@ impl Document {
                 .map(|range| html.replace_range(range, body_html))
                 .is_some();
 
-            if !replaced {
-                if let Some((start, end)) = body_content_range(&html) {
+            if !replaced
+                && let Some((start, end)) = body_content_range(&html) {
                     html.replace_range(start..end, body_html);
                 }
-            }
         }
 
         // Inject document.write() output just before </body>.
@@ -120,7 +127,11 @@ fn first_element_id(html: &str) -> Option<String> {
     let pos = tag.find(marker)? + marker.len();
     let end = tag[pos..].find('"')? + pos;
     let id = &tag[pos..end];
-    if id.is_empty() { None } else { Some(id.to_owned()) }
+    if id.is_empty() {
+        None
+    } else {
+        Some(id.to_owned())
+    }
 }
 
 /// Find the byte range of the element with `id="<id>"` in `html`.
@@ -140,31 +151,32 @@ fn find_element_range_by_id(html: &str, id: &str) -> Option<std::ops::Range<usiz
 
     // Void elements have no closing tag.
     const VOID: &[&str] = &[
-        "area", "base", "br", "col", "embed", "hr", "img", "input",
-        "link", "meta", "param", "source", "track", "wbr",
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
+        "source", "track", "wbr",
     ];
-    if VOID.contains(&tag_name.as_str())
-        || html[tag_start..open_end].ends_with("/>")
-    {
+    if VOID.contains(&tag_name.as_str()) || html[tag_start..open_end].ends_with("/>") {
         return Some(tag_start..open_end);
     }
 
     // Walk forward, counting open/close tags of the same name to find the match.
-    let open_pat  = format!("<{}", tag_name);   // e.g. "<div"
+    let open_pat = format!("<{}", tag_name); // e.g. "<div"
     let close_pat = format!("</{}>", tag_name); // e.g. "</div>"
     let mut depth: usize = 1;
     let mut pos = open_end;
 
     while depth > 0 {
         let rest = &html[pos..];
-        let next_open  = rest.find(&open_pat).map(|p| p + pos);
+        let next_open = rest.find(&open_pat).map(|p| p + pos);
         let next_close = rest.find(&close_pat).map(|p| p + pos);
 
         match (next_open, next_close) {
             (Some(o), Some(c)) if o < c => {
                 // Verify this is a real tag boundary (next char is whitespace, '>', or '/').
                 let after = html.as_bytes().get(o + open_pat.len()).copied();
-                if matches!(after, Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'>') | Some(b'/')) {
+                if matches!(
+                    after,
+                    Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'>') | Some(b'/')
+                ) {
                     depth += 1;
                 }
                 pos = o + open_pat.len();
@@ -201,7 +213,7 @@ fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
             .iter()
             .find(|a| &a.name.local == "type")
             .map(|a| a.value.to_string());
-        if let Some(t) = type_val {
+        if let Some(ref t) = type_val {
             let t = t.trim().to_ascii_lowercase();
             let executable = match t.as_str() {
                 ""
@@ -213,6 +225,21 @@ fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
                 t => t.ends_with("-text/javascript") || t.ends_with("-application/javascript"),
             };
             if !executable {
+                // Non-JS typed script with a src (e.g. riot/tag): register it in
+                // _r_nonstandard_scripts so querySelectorAll('script[type="X"]') can find it.
+                let src = attrs
+                    .iter()
+                    .find(|a| &a.name.local == "src")
+                    .map(|a| a.value.trim().to_string());
+                if let Some(src) = src.filter(|s| !s.is_empty()) {
+                    let t_escaped = t.replace('\'', "\\'");
+                    let s_escaped = src.replace('\\', "\\\\").replace('\'', "\\'");
+                    out.push(ScriptSource::Inline(format!(
+                        "_r_nonstandard_scripts.push({{type:'{t_escaped}',src:'{s_escaped}',\
+                        getAttribute:function(n){{return n==='src'?this.src:n==='type'?this.type:null;}},\
+                        innerHTML:''}});"
+                    )));
+                }
                 return;
             }
         }
@@ -242,5 +269,33 @@ fn collect_scripts(handle: &Handle, out: &mut Vec<ScriptSource>) {
     }
     for child in handle.children.borrow().iter() {
         collect_scripts(child, out);
+    }
+}
+
+/// Recursively collect `<meta name="…" content="…">` elements into `map`.
+fn collect_meta_tags(handle: &Handle, map: &mut std::collections::HashMap<String, String>) {
+    if let NodeData::Element {
+        ref name,
+        ref attrs,
+        ..
+    } = handle.data
+        && &name.local == "meta"
+    {
+        let attrs = attrs.borrow();
+        let name_val = attrs
+            .iter()
+            .find(|a| &a.name.local == "name")
+            .map(|a| a.value.to_string());
+        let content_val = attrs
+            .iter()
+            .find(|a| &a.name.local == "content")
+            .map(|a| a.value.to_string());
+        if let (Some(n), Some(c)) = (name_val, content_val)
+            && !n.is_empty() {
+                map.insert(n, c);
+            }
+    }
+    for child in handle.children.borrow().iter() {
+        collect_meta_tags(child, map);
     }
 }

@@ -252,6 +252,23 @@ function _r_el(tag) {
         get: function() { return el._kids.length > 0 ? el._kids[el._kids.length - 1] : null; },
         configurable: true
     });
+    // Glimmer VM uses nextSibling/previousSibling to navigate the DOM during rendering.
+    Object.defineProperty(el, 'nextSibling', {
+        get: function() {
+            if (!el.parentNode || !el.parentNode._kids) return null;
+            var idx = el.parentNode._kids.indexOf(el);
+            return idx >= 0 && idx + 1 < el.parentNode._kids.length ? el.parentNode._kids[idx + 1] : null;
+        },
+        configurable: true
+    });
+    Object.defineProperty(el, 'previousSibling', {
+        get: function() {
+            if (!el.parentNode || !el.parentNode._kids) return null;
+            var idx = el.parentNode._kids.indexOf(el);
+            return idx > 0 ? el.parentNode._kids[idx - 1] : null;
+        },
+        configurable: true
+    });
     if (tag === 'TEMPLATE') {
         Object.defineProperty(el, 'content', {
             get: function() { var f = _r_el('div'); f.innerHTML = el.innerHTML; return f; },
@@ -301,9 +318,20 @@ var _r_nonstandard_scripts = [];
 
 document.createElement    = _r_el;
 document.createElementNS  = function(ns, tag) { return _r_el(tag); };  // Vue/Angular: SVG elements created via createElementNS
-document.createTextNode   = function(t) { return {nodeType:3, nodeValue:String(t), textContent:String(t)}; };
-document.createComment    = function(t) { return {nodeType:8, nodeValue:t}; };
+document.createTextNode   = function(t) { return {nodeType:3, nodeValue:String(t), textContent:String(t), parentNode:null, parentElement:null}; };
+document.createComment    = function(t) { return {nodeType:8, nodeValue:t, parentNode:null, parentElement:null,
+    nextSibling: null, previousSibling: null}; };
 document.createDocumentFragment = function() { return _r_el('div'); };  // React/Angular: mount root appended to a fragment first
+// Glimmer: createRawHTMLSection creates a comment-based raw HTML boundary marker
+document.createRawHTMLSection = function(html) {
+    var n = document.createComment('');
+    n._rawHtml = html;
+    return n;
+};
+// Glimmer/Tabster: createTreeWalker returns a stub walker that visits no nodes
+document.createTreeWalker = function(root) {
+    return { currentNode: root, nextNode: function() { return null; }, parentNode: function() { return null; } };
+};
 document.createRange      = function() {
     return {
         selectNodeContents: function() {},
@@ -341,6 +369,10 @@ document.querySelector = function(sel) {
     if (tag === 'BODY')   return document.body;
     if (tag === 'HTML')   return document.documentElement;
     if (tag === 'SCRIPT') return document.currentScript;
+    // Ember: reads app config from meta[name="app/config/environment"] before boot.
+    // _r_meta is populated by Rust from the page's <meta> tags before scripts run.
+    var metaName = sel.match(/^meta\[name=['"]?([^'">\]]+)['"]?\]$/i);
+    if (metaName && typeof _r_meta !== 'undefined') return _r_meta[metaName[1]] || null;
     // Mithril: mounts via querySelector('.todoapp'); Angular: querySelector('app-root').
     // Return document.body so the framework mounts into our captured DOM rather than null.
     if (/^\.[a-zA-Z][\w-]*$/.test(sel)) return document.body;  // .class selector
@@ -494,6 +526,8 @@ window.clearInterval         = function(id) {};
 window.requestAnimationFrame = function(fn) { if (typeof fn === 'function') _r_timers.push(fn); return _r_timers.length; };
 window.cancelAnimationFrame  = function(id) {};
 window.queueMicrotask        = function(fn) { if (typeof fn === 'function') _r_timers.push(fn); };
+window.setImmediate          = function(fn) { if (typeof fn === 'function') _r_timers.push(fn); return 0; };
+window.clearImmediate        = function(id) {};
 window.alert   = function(msg) {};
 window.confirm = function(msg) { return false; };
 window.prompt  = function(msg, def) { return null; };
@@ -705,8 +739,16 @@ window.EventTarget  = function() {};
 window.SVGElement   = function() {};  // Vue: checks `el instanceof SVGElement` when deciding how to create elements
 window.Document     = function() {};
 window.DocumentFragment = function() {};
-window.Window       = function() {};
+window.Window       = function Window() {};
 window.ShadowRoot   = function() {};  // web-components, Svelte: shadow DOM host check
+// Ember 5.x hasDOM check: self.constructor === Window.
+// In QuickJS globalThis.constructor defaults to Object; override it so Ember
+// recognises the environment as a real browser and enables interactive rendering.
+try {
+    Object.defineProperty(window, 'constructor', {
+        value: window.Window, configurable: true, writable: true, enumerable: false
+    });
+} catch(e) { window.constructor = window.Window; }
 window.devicePixelRatio = 1;
 window.innerWidth  = 1920; window.innerHeight = 1080;
 window.outerWidth  = 1920; window.outerHeight = 1080;

@@ -154,13 +154,23 @@ fn main() -> anyhow::Result<()> {
         None
     } else if let Some(secs) = cli.timeout {
         if secs <= 0.0 {
-            anyhow::bail!("--timeout must be greater than zero (use --no-timeout to remove the cap)");
+            anyhow::bail!(
+                "--timeout must be greater than zero (use --no-timeout to remove the cap)"
+            );
         }
         Some(Duration::from_secs_f64(secs))
     } else {
         Some(Duration::from_secs(30))
     };
-    let rendered = render(&input, is_js, page_url, &cfg, cli.clean, cli.max_scripts, script_timeout)?;
+    let rendered = render(
+        &input,
+        is_js,
+        page_url,
+        &cfg,
+        cli.clean,
+        cli.max_scripts,
+        script_timeout,
+    )?;
     let rendered = match &cli.selector {
         Some(sel) => select_html(&rendered, sel)?,
         None => rendered,
@@ -168,8 +178,16 @@ fn main() -> anyhow::Result<()> {
     let result = if cli.diff {
         diff_html(&input, &rendered)
     } else {
-        let html = if cli.pretty { pretty_print(&rendered) } else { rendered };
-        if cli.json { to_json(input.len(), &html) } else { html }
+        let html = if cli.pretty {
+            pretty_print(&rendered)
+        } else {
+            rendered
+        };
+        if cli.json {
+            to_json(input.len(), &html)
+        } else {
+            html
+        }
     };
 
     match &cli.output {

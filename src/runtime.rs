@@ -79,10 +79,14 @@ mod boa_rt {
         /// Create a new runtime with a custom per-script timeout.
         ///
         /// Boa has no interrupt-handler API, so the timeout is accepted but not enforced.
-        pub fn with_timeout(_timeout: std::time::Duration) -> Self { Self::new() }
+        pub fn with_timeout(_timeout: std::time::Duration) -> Self {
+            Self::new()
+        }
 
         /// Create a new runtime with no per-script timeout.
-        pub fn without_timeout() -> Self { Self::new() }
+        pub fn without_timeout() -> Self {
+            Self::new()
+        }
 
         fn new() -> Self {
             WRITTEN.with(|w| w.borrow_mut().clear());
@@ -95,7 +99,12 @@ mod boa_rt {
         ///
         /// Errors from individual scripts are printed to stderr and skipped; the method
         /// only returns `Err` if the bootstrap itself fails to evaluate.
-        pub fn execute(&self, scripts: &[String], page_url: Option<&str>, _cfg: &crate::HttpConfig) -> anyhow::Result<()> {
+        pub fn execute(
+            &self,
+            scripts: &[String],
+            page_url: Option<&str>,
+            _cfg: &crate::HttpConfig,
+        ) -> anyhow::Result<()> {
             let mut ctx = Context::default();
             ctx.runtime_limits_mut().set_stack_size_limit(65536);
             ctx.runtime_limits_mut().set_recursion_limit(65536);
@@ -120,7 +129,9 @@ mod boa_rt {
                     .and_then(|v| v.to_number(&mut ctx).ok())
                     .map(|n| n as i32)
                     .unwrap_or(0);
-                if remaining == 0 { break; }
+                if remaining == 0 {
+                    break;
+                }
             }
 
             let body_result = ctx.eval(Source::from_bytes(super::READBACK_JS.as_bytes()));
@@ -243,15 +254,20 @@ mod quickjs_rt {
 
     use anyhow::anyhow;
     use rquickjs::{
-        Context, Ctx, Function, Module, Object, Runtime, Value, context::EvalOptions,
+        Context, Ctx, Function, Module, Object, Runtime, Value,
+        context::EvalOptions,
         loader::{Loader, Resolver},
     };
-
 
     struct StubModuleSystem;
 
     impl Resolver for StubModuleSystem {
-        fn resolve<'js>(&mut self, _ctx: &Ctx<'js>, _base: &str, name: &str) -> rquickjs::Result<String> {
+        fn resolve<'js>(
+            &mut self,
+            _ctx: &Ctx<'js>,
+            _base: &str,
+            name: &str,
+        ) -> rquickjs::Result<String> {
             Ok(name.to_string())
         }
     }
@@ -267,13 +283,13 @@ mod quickjs_rt {
         static LOGGED:          RefCell<Vec<String>>                   = const { RefCell::new(Vec::new()) };
         static BODY_INNER_HTML: RefCell<String>                        = const { RefCell::new(String::new()) };
         // Deadline for the currently-executing script; None means no limit active.
-        static SCRIPT_DEADLINE: RefCell<Option<Instant>>               = RefCell::new(None);
+        static SCRIPT_DEADLINE: RefCell<Option<Instant>>               = const { RefCell::new(None) };
         // HttpConfig fields stored so the _r_fetch_sync native function can use them.
-        static XHR_UA:          RefCell<Option<String>>                = RefCell::new(None);
+        static XHR_UA:          RefCell<Option<String>>                = const { RefCell::new(None) };
         static XHR_HEADERS:     RefCell<Vec<(String, String)>>         = const { RefCell::new(Vec::new()) };
-        static XHR_PROXY:       RefCell<Option<String>>                = RefCell::new(None);
+        static XHR_PROXY:       RefCell<Option<String>>                = const { RefCell::new(None) };
         // Per-request timeout applied to XHR fetches; mirrors the script timeout.
-        static XHR_TIMEOUT:          RefCell<Option<Duration>>         = RefCell::new(None);
+        static XHR_TIMEOUT:          RefCell<Option<Duration>>         = const { RefCell::new(None) };
         // Whether to forward custom -H headers on XHR requests (off by default).
         static XHR_FORWARD_HEADERS:  std::cell::Cell<bool>             = const { std::cell::Cell::new(false) };
     }
@@ -297,7 +313,9 @@ mod quickjs_rt {
             WRITTEN.with(|w| w.borrow_mut().clear());
             LOGGED.with(|l| l.borrow_mut().clear());
             BODY_INNER_HTML.with(|b| b.borrow_mut().clear());
-            JsRuntime { timeout: Some(timeout) }
+            JsRuntime {
+                timeout: Some(timeout),
+            }
         }
 
         /// Create a new runtime with no per-script timeout.
@@ -314,7 +332,12 @@ mod quickjs_rt {
         /// assignments to undeclared globals are allowed, as used by SvelteKit and webpack.
         /// Errors from individual scripts are printed to stderr and skipped; the method
         /// only returns `Err` if the bootstrap itself fails to evaluate.
-        pub fn execute(&self, scripts: &[String], page_url: Option<&str>, cfg: &crate::HttpConfig) -> anyhow::Result<()> {
+        pub fn execute(
+            &self,
+            scripts: &[String],
+            page_url: Option<&str>,
+            cfg: &crate::HttpConfig,
+        ) -> anyhow::Result<()> {
             XHR_UA.with(|u| *u.borrow_mut() = cfg.user_agent.clone());
             XHR_HEADERS.with(|h| *h.borrow_mut() = cfg.headers.clone());
             XHR_PROXY.with(|p| *p.borrow_mut() = cfg.proxy.clone());
@@ -329,12 +352,10 @@ mod quickjs_rt {
                 let mut counter = 0u32;
                 move || {
                     counter = counter.wrapping_add(1);
-                    if counter % 10_000 != 0 {
+                    if !counter.is_multiple_of(10_000) {
                         return false;
                     }
-                    SCRIPT_DEADLINE.with(|d| {
-                        d.borrow().map_or(false, |dl| Instant::now() > dl)
-                    })
+                    SCRIPT_DEADLINE.with(|d| d.borrow().is_some_and(|dl| Instant::now() > dl))
                 }
             })));
 
@@ -356,7 +377,9 @@ mod quickjs_rt {
                     .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
 
                 for script in scripts {
-                    if let Some(t) = self.timeout { set_deadline(t); }
+                    if let Some(t) = self.timeout {
+                        set_deadline(t);
+                    }
                     let result = ctx.eval_with_options::<Value, _>(script.as_str(), sloppy());
                     clear_deadline();
                     if result.is_err() {
@@ -364,11 +387,10 @@ mod quickjs_rt {
                         if let Some(e) = exc.as_exception() {
                             let msg = e.message().unwrap_or_else(|| "unknown exception".into());
                             eprintln!("[js error] {}", msg);
-                            if crate::is_verbose() {
-                                if let Some(stack) = e.stack() {
+                            if crate::is_verbose()
+                                && let Some(stack) = e.stack() {
                                     eprintln!("[js stack] {}", stack);
                                 }
-                            }
                         }
                     }
                     // Drain Promise microtasks after each script so .then() chains fire
@@ -381,7 +403,9 @@ mod quickjs_rt {
                 // so both queues must be drained together until both are empty.
                 let mut consecutive_empty = 0u32;
                 for _ in 0..128u32 {
-                    if let Some(t) = self.timeout { set_deadline(t); }
+                    if let Some(t) = self.timeout {
+                        set_deadline(t);
+                    }
                     let remaining: i32 = ctx
                         .eval_with_options::<Value, _>(super::TIMER_FLUSH_JS, sloppy())
                         .ok()
@@ -389,16 +413,22 @@ mod quickjs_rt {
                         .unwrap_or(0);
                     clear_deadline();
                     let mut had_jobs = false;
-                    while ctx.execute_pending_job() { had_jobs = true; }
+                    while ctx.execute_pending_job() {
+                        had_jobs = true;
+                    }
                     if remaining == 0 && !had_jobs {
                         consecutive_empty += 1;
-                        if consecutive_empty >= 3 { break; }
+                        if consecutive_empty >= 3 {
+                            break;
+                        }
                     } else {
                         consecutive_empty = 0;
                     }
                 }
 
-                if let Some(t) = self.timeout { set_deadline(t); }
+                if let Some(t) = self.timeout {
+                    set_deadline(t);
+                }
                 let body_html: String = ctx
                     .eval_with_options::<Value, _>(super::READBACK_JS, sloppy())
                     .ok()
@@ -484,18 +514,42 @@ mod quickjs_rt {
         let noop_fn = Function::new(ctx.clone(), || Ok::<(), rquickjs::Error>(()))
             .map_err(|e| anyhow!("{:?}", e))?;
 
-        console.set("log",      log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("warn",     log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("error",    log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("info",     log_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("debug",    log_fn).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("table",    noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("group",    noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("groupEnd", noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("groupCollapsed", noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("time",     noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("timeEnd",  noop_fn.clone()).map_err(|e| anyhow!("{:?}", e))?;
-        console.set("assert",   noop_fn).map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("log", log_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("warn", log_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("error", log_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("info", log_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("debug", log_fn)
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("table", noop_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("group", noop_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("groupEnd", noop_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("groupCollapsed", noop_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("time", noop_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("timeEnd", noop_fn.clone())
+            .map_err(|e| anyhow!("{:?}", e))?;
+        console
+            .set("assert", noop_fn)
+            .map_err(|e| anyhow!("{:?}", e))?;
 
         ctx.globals()
             .set("console", console)
@@ -507,20 +561,19 @@ mod quickjs_rt {
     /// so frameworks that XHR-load templates (e.g. RiotJS) get real response bodies.
     fn setup_xhr_fetch(ctx: Ctx<'_>) -> anyhow::Result<()> {
         let fetch_fn = Function::new(ctx.clone(), |url: String| -> String {
-            let ua             = XHR_UA.with(|u| u.borrow().clone());
-            let headers        = XHR_HEADERS.with(|h| h.borrow().clone());
-            let proxy          = XHR_PROXY.with(|p| p.borrow().clone());
-            let timeout        = XHR_TIMEOUT.with(|t| *t.borrow());
-            let forward_hdrs   = XHR_FORWARD_HEADERS.with(|f| f.get());
+            let ua = XHR_UA.with(|u| u.borrow().clone());
+            let headers = XHR_HEADERS.with(|h| h.borrow().clone());
+            let proxy = XHR_PROXY.with(|p| p.borrow().clone());
+            let timeout = XHR_TIMEOUT.with(|t| *t.borrow());
+            let forward_hdrs = XHR_FORWARD_HEADERS.with(|f| f.get());
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 return String::new();
             }
             let mut builder = ureq::AgentBuilder::new();
-            if let Some(ref proxy_url) = proxy {
-                if let Ok(p) = ureq::Proxy::new(proxy_url) {
+            if let Some(ref proxy_url) = proxy
+                && let Ok(p) = ureq::Proxy::new(proxy_url) {
                     builder = builder.proxy(p);
                 }
-            }
             if let Some(dur) = timeout {
                 builder = builder.timeout(dur);
             }

@@ -21,24 +21,33 @@ mod tests {
     #[test]
     fn shows_added_content() {
         let before = "<html><body></body></html>";
-        let after  = "<html><body><h1>hello</h1></body></html>";
+        let after = "<html><body><h1>hello</h1></body></html>";
         let d = diff_html(before, after);
-        assert!(d.contains("---"),    "missing --- header");
-        assert!(d.contains("+++"),    "missing +++ header");
-        assert!(d.lines().any(|l| l.starts_with('+') && l.contains("<h1>")), "added h1 not in diff: {d}");
+        assert!(d.contains("---"), "missing --- header");
+        assert!(d.contains("+++"), "missing +++ header");
+        assert!(
+            d.lines().any(|l| l.starts_with('+') && l.contains("<h1>")),
+            "added h1 not in diff: {d}"
+        );
     }
 
     #[test]
     fn empty_when_identical() {
         let html = "<html><body><p>same</p></body></html>";
-        assert!(diff_html(html, html).is_empty(), "identical inputs should produce empty diff");
+        assert!(
+            diff_html(html, html).is_empty(),
+            "identical inputs should produce empty diff"
+        );
     }
 
     #[test]
     fn shows_removed_content() {
         let before = "<html><body><p>gone</p></body></html>";
-        let after  = "<html><body></body></html>";
+        let after = "<html><body></body></html>";
         let d = diff_html(before, after);
-        assert!(d.lines().any(|l| l.starts_with('-') && l.contains("<p>")), "removed p not in diff: {d}");
+        assert!(
+            d.lines().any(|l| l.starts_with('-') && l.contains("<p>")),
+            "removed p not in diff: {d}"
+        );
     }
 }

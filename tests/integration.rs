@@ -181,7 +181,16 @@ fn custom_user_agent_is_sent() {
         .unwrap()
         .into_string()
         .unwrap();
-    let out = render(&raw, false, Some("https://httpbin.org/user-agent"), &cfg, false, None, None).unwrap();
+    let out = render(
+        &raw,
+        false,
+        Some("https://httpbin.org/user-agent"),
+        &cfg,
+        false,
+        None,
+        None,
+    )
+    .unwrap();
 
     assert!(
         out.contains("rakers-test/1.0"),

@@ -50,13 +50,13 @@ fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
-            '"'  => out.push_str("\\\""),
+            '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c    => out.push(c),
+            c => out.push(c),
         }
     }
     out
@@ -84,8 +84,12 @@ impl HttpConfig {
         let mut builder = ureq::AgentBuilder::new();
         if let Some(ref proxy_url) = self.proxy {
             match ureq::Proxy::new(proxy_url) {
-                Ok(proxy) => { builder = builder.proxy(proxy); }
-                Err(e) => { eprintln!("[proxy error] {proxy_url}: {e}"); }
+                Ok(proxy) => {
+                    builder = builder.proxy(proxy);
+                }
+                Err(e) => {
+                    eprintln!("[proxy error] {proxy_url}: {e}");
+                }
             }
         }
         builder.build()
@@ -140,17 +144,23 @@ fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
     // module loader with relative specifier resolution that we can't provide.
     // Self-contained bundles tagged type="module" by their bundler are fine.
     let trimmed = body.trim_start();
-    if trimmed.starts_with("import ") || trimmed.starts_with("import{") || trimmed.starts_with("export ") {
+    if trimmed.starts_with("import ")
+        || trimmed.starts_with("import{")
+        || trimmed.starts_with("export ")
+    {
         // Narrow exception: a file whose entire content is a single bare side-effect
         // import (`import './bundle.js'`) is a Vite/Rollup entry-point shim that
         // just loads one self-contained bundle.  Follow that one hop.
-        if let Some(target) = single_reexport_target(trimmed) {
-            if let Some(resolved) = resolve_url(target, Some(url)) {
-                if is_verbose() { eprintln!("[module-shim] {url} → {resolved}"); }
+        if let Some(target) = single_reexport_target(trimmed)
+            && let Some(resolved) = resolve_url(target, Some(url)) {
+                if is_verbose() {
+                    eprintln!("[module-shim] {url} → {resolved}");
+                }
                 return fetch_script(&resolved, cfg);
             }
+        if is_verbose() {
+            eprintln!("[skip] {url}: ES module syntax requires a module loader");
         }
-        if is_verbose() { eprintln!("[skip] {url}: ES module syntax requires a module loader"); }
         return None;
     }
     Some(body)
@@ -174,13 +184,16 @@ fn single_reexport_target(src: &str) -> Option<&str> {
     let after_import = s["import".len()..].trim_start();
     let (quote, rest) = match after_import.chars().next()? {
         '\'' => ('\'', &after_import[1..]),
-        '"'  => ('"',  &after_import[1..]),
-        _    => return None, // not a bare side-effect import
+        '"' => ('"', &after_import[1..]),
+        _ => return None, // not a bare side-effect import
     };
     let specifier_end = rest.find(quote)?;
     let specifier = &rest[..specifier_end];
     // Verify there is nothing meaningful after the closing quote.
-    let tail = rest[specifier_end + 1..].trim().trim_start_matches(';').trim();
+    let tail = rest[specifier_end + 1..]
+        .trim()
+        .trim_start_matches(';')
+        .trim();
     if !tail.is_empty() {
         return None; // more than one statement
     }
@@ -211,11 +224,17 @@ fn load_scripts(
             dom::ScriptSource::Inline(code) => result.push(code),
             dom::ScriptSource::External(src) => {
                 if max_remote.is_some_and(|max| remote_fetched >= max) {
-                    if is_verbose() { eprintln!("[skip] --max-scripts limit reached, skipping {src}"); }
+                    if is_verbose() {
+                        eprintln!("[skip] --max-scripts limit reached, skipping {src}");
+                    }
                     continue;
                 }
-                let Some(url) = resolve_url(&src, page_url) else { continue };
-                if is_verbose() { eprintln!("[fetch] {url}"); }
+                let Some(url) = resolve_url(&src, page_url) else {
+                    continue;
+                };
+                if is_verbose() {
+                    eprintln!("[fetch] {url}");
+                }
                 if let Some(code) = fetch_script(&url, cfg) {
                     remote_fetched += 1;
                     result.push(code);
@@ -234,7 +253,7 @@ fn build_meta_script(meta: std::collections::HashMap<String, String>) -> String 
     }
     let mut out = String::from("var _r_meta = {");
     for (name, content) in &meta {
-        let name_esc    = name.replace('\\', "\\\\").replace('\'', "\\'");
+        let name_esc = name.replace('\\', "\\\\").replace('\'', "\\'");
         let content_esc = content.replace('\\', "\\\\").replace('\'', "\\'");
         out.push_str(&format!(
             "'{}':{{name:'{}',content:'{}',\
@@ -283,12 +302,14 @@ pub fn render(
 
     let rt = match script_timeout {
         Some(t) => runtime::JsRuntime::with_timeout(t),
-        None    => runtime::JsRuntime::without_timeout(),
+        None => runtime::JsRuntime::without_timeout(),
     };
     rt.execute(&scripts, page_url, cfg)?;
 
     for msg in rt.logged_messages() {
-        if is_verbose() { eprintln!("[console] {msg}"); }
+        if is_verbose() {
+            eprintln!("[console] {msg}");
+        }
     }
 
     let body_html = rt.body_inner_html();
@@ -332,7 +353,10 @@ fn remove_script_elements(mut html: String) -> String {
     while let Some(start) = html.find(OPEN) {
         // Guard against false matches like a hypothetical <scriptures> tag.
         let next = html.as_bytes().get(start + OPEN.len()).copied();
-        if !matches!(next, Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r') | Some(b'>') | Some(b'/') | None) {
+        if !matches!(
+            next,
+            Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r') | Some(b'>') | Some(b'/') | None
+        ) {
             break;
         }
         let end = html[start..]
@@ -368,13 +392,21 @@ fn remove_preload_links(mut html: String) -> String {
 /// Remove `<noscript>` and `</noscript>` tags, keeping the content between them.
 fn unwrap_noscript(mut html: String) -> String {
     // html5ever always lowercases tag names; no attributes appear on <noscript>.
+    #[allow(clippy::while_let_loop)] // two let-else breaks inside; while-let doesn't fit
     loop {
         // Remove opening tag (may have no attributes, so just "<noscript>")
-        let Some(open_start) = html.find("<noscript") else { break };
-        let Some(open_end) = html[open_start..].find('>').map(|p| open_start + p + 1) else { break };
+        let Some(open_start) = html.find("<noscript") else {
+            break;
+        };
+        let Some(open_end) = html[open_start..].find('>').map(|p| open_start + p + 1) else {
+            break;
+        };
         html.drain(open_start..open_end);
         // Remove the matching closing tag (now starts searching from open_start).
-        if let Some(close) = html[open_start..].find("</noscript>").map(|p| open_start + p) {
+        if let Some(close) = html[open_start..]
+            .find("</noscript>")
+            .map(|p| open_start + p)
+        {
             html.drain(close..close + "</noscript>".len());
         }
     }
@@ -387,7 +419,10 @@ fn unwrap_noscript(mut html: String) -> String {
 /// replace the server-rendered body (SSR heuristic).
 fn raw_body_content_len(html: &str) -> usize {
     let body_start = html.find("<body").unwrap_or(0);
-    let content_start = html[body_start..].find('>').map(|i| i + body_start + 1).unwrap_or(0);
+    let content_start = html[body_start..]
+        .find('>')
+        .map(|i| i + body_start + 1)
+        .unwrap_or(0);
     let body_end = html.rfind("</body>").unwrap_or(html.len());
     let body = &html[content_start.min(body_end)..body_end];
     // Exclude <script> tags so SPAs with many script src= references aren't
@@ -395,7 +430,9 @@ fn raw_body_content_len(html: &str) -> usize {
     let mut len = body.len();
     let mut rest = body;
     while let Some(s) = rest.find("<script") {
-        let end = rest[s..].find("</script>").map(|e| s + e + 9)
+        let end = rest[s..]
+            .find("</script>")
+            .map(|e| s + e + 9)
             .or_else(|| rest[s..].find("/>").map(|e| s + e + 2))
             .unwrap_or(rest.len());
         len -= end - s;
@@ -409,7 +446,15 @@ fn raw_body_content_len(html: &str) -> usize {
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
 pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
     let body = cfg.apply(cfg.agent().get(url)).call()?.into_string()?;
-    render(&body, false, Some(url), cfg, clean, None, Some(Duration::from_secs(30)))
+    render(
+        &body,
+        false,
+        Some(url),
+        cfg,
+        clean,
+        None,
+        Some(Duration::from_secs(30)),
+    )
 }
 
 #[cfg(test)]
@@ -417,7 +462,15 @@ mod tests {
     use super::*;
 
     fn render_simple(input: &str, is_js: bool, page_url: Option<&str>) -> anyhow::Result<String> {
-        render(input, is_js, page_url, &HttpConfig::default(), false, None, None)
+        render(
+            input,
+            is_js,
+            page_url,
+            &HttpConfig::default(),
+            false,
+            None,
+            None,
+        )
     }
 
     #[test]
@@ -457,7 +510,8 @@ mod tests {
     fn console_messages_captured() {
         let js = r#"console.log("hello", "world"); console.warn("oops");"#;
         let rt = runtime::JsRuntime::with_timeout(std::time::Duration::from_secs(30));
-        rt.execute(&[js.to_owned()], None, &HttpConfig::default()).unwrap();
+        rt.execute(&[js.to_owned()], None, &HttpConfig::default())
+            .unwrap();
         let msgs = rt.logged_messages();
         assert_eq!(msgs[0], "hello world");
         assert_eq!(msgs[1], "oops");
@@ -615,13 +669,22 @@ mod tests {
             "</body></html>",
         );
         let out = render(html, false, None, &HttpConfig::default(), true, None, None).unwrap();
-        assert!(!out.contains("<script"),      "script tags removed");
-        assert!(!out.contains("modulepreload"),"modulepreload link removed");
-        assert!(!out.contains(r#"as="script""#), "preload-script link removed");
-        assert!( out.contains(r#"rel="stylesheet""#), "stylesheet link preserved");
-        assert!(!out.contains("<noscript"),    "noscript tags removed");
-        assert!( out.contains("<p>JS required</p>"), "noscript content preserved");
-        assert!( out.contains("<h1>Hello</h1>"),     "regular content preserved");
+        assert!(!out.contains("<script"), "script tags removed");
+        assert!(!out.contains("modulepreload"), "modulepreload link removed");
+        assert!(
+            !out.contains(r#"as="script""#),
+            "preload-script link removed"
+        );
+        assert!(
+            out.contains(r#"rel="stylesheet""#),
+            "stylesheet link preserved"
+        );
+        assert!(!out.contains("<noscript"), "noscript tags removed");
+        assert!(
+            out.contains("<p>JS required</p>"),
+            "noscript content preserved"
+        );
+        assert!(out.contains("<h1>Hello</h1>"), "regular content preserved");
     }
 
     #[test]
@@ -647,7 +710,10 @@ mod tests {
     fn to_json_fields() {
         let out = to_json(100, "<h1>hi</h1>");
         assert!(out.contains("\"raw_bytes\": 100"), "raw_bytes field");
-        assert!(out.contains("\"rendered_bytes\": 11"), "rendered_bytes field");
+        assert!(
+            out.contains("\"rendered_bytes\": 11"),
+            "rendered_bytes field"
+        );
         assert!(out.contains("\"html\""), "html field present");
         assert!(out.contains("<h1>hi</h1>"), "html content");
     }
@@ -655,7 +721,10 @@ mod tests {
     #[test]
     fn to_json_escapes_special_chars() {
         let out = to_json(0, "say \"hello\"\nline2\\end");
-        assert!(out.contains(r#"say \"hello\"\nline2\\end"#), "quotes, newline, backslash escaped: {out}");
+        assert!(
+            out.contains(r#"say \"hello\"\nline2\\end"#),
+            "quotes, newline, backslash escaped: {out}"
+        );
     }
 
     #[test]
@@ -669,7 +738,10 @@ mod tests {
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
         let after_script = out.find("</script>").map(|i| &out[i..]).unwrap_or("");
-        assert!(after_script.contains("<p>fetch-ok</p>"), "fetch .then() chain must fire, got: {out}");
+        assert!(
+            after_script.contains("<p>fetch-ok</p>"),
+            "fetch .then() chain must fire, got: {out}"
+        );
     }
 
     #[test]
@@ -680,7 +752,10 @@ mod tests {
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
         let after_script = out.find("</script>").map(|i| &out[i..]).unwrap_or("");
-        assert!(after_script.contains("<p>json-ok</p>"), "fetch.json() chain must fire, got: {out}");
+        assert!(
+            after_script.contains("<p>json-ok</p>"),
+            "fetch.json() chain must fire, got: {out}"
+        );
     }
 
     #[test]
@@ -693,7 +768,10 @@ mod tests {
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
         let after_script = out.find("</script>").map(|i| &out[i..]).unwrap_or("");
-        assert!(after_script.contains("<p>xhr-ok</p>"), "XHR onload must fire, got: {out}");
+        assert!(
+            after_script.contains("<p>xhr-ok</p>"),
+            "XHR onload must fire, got: {out}"
+        );
     }
 
     #[test]
@@ -705,14 +783,29 @@ mod tests {
             "xhr.send();",
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("<p>xhr-addev-ok</p>"), "XHR addEventListener('load') must fire, got: {out}");
+        assert!(
+            out.contains("<p>xhr-addev-ok</p>"),
+            "XHR addEventListener('load') must fire, got: {out}"
+        );
     }
 
     #[test]
     fn location_pathname_reflects_page_url() {
         let js = r#"document.write(window.location.pathname)"#;
-        let out = render(js, true, Some("https://example.com/foo/bar"), &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("/foo/bar"), "pathname should be /foo/bar, got: {out}");
+        let out = render(
+            js,
+            true,
+            Some("https://example.com/foo/bar"),
+            &HttpConfig::default(),
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(
+            out.contains("/foo/bar"),
+            "pathname should be /foo/bar, got: {out}"
+        );
     }
 
     #[test]
@@ -724,19 +817,31 @@ mod tests {
             "document.write(window.location.search + '|');",
             "document.write(window.location.hash);",
         );
-        let out = render(js, true, Some("https://example.com/path?q=1#sec"), &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("https:|"),   "protocol wrong: {out}");
+        let out = render(
+            js,
+            true,
+            Some("https://example.com/path?q=1#sec"),
+            &HttpConfig::default(),
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(out.contains("https:|"), "protocol wrong: {out}");
         assert!(out.contains("example.com|"), "hostname wrong: {out}");
-        assert!(out.contains("/path|"),    "pathname wrong: {out}");
-        assert!(out.contains("?q=1|"),     "search wrong: {out}");
-        assert!(out.contains("#sec"),      "hash wrong: {out}");
+        assert!(out.contains("/path|"), "pathname wrong: {out}");
+        assert!(out.contains("?q=1|"), "search wrong: {out}");
+        assert!(out.contains("#sec"), "hash wrong: {out}");
     }
 
     #[test]
     fn location_defaults_when_no_url() {
         let js = r#"document.write(window.location.href)"#;
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains("about:blank"), "href should be about:blank when no URL given, got: {out}");
+        assert!(
+            out.contains("about:blank"),
+            "href should be about:blank when no URL given, got: {out}"
+        );
     }
 
     #[test]
@@ -746,18 +851,36 @@ mod tests {
             "document.write(JSON.stringify(window.history.state));",
         );
         let out = render(js, true, None, &HttpConfig::default(), false, None, None).unwrap();
-        assert!(out.contains(r#""page""#) && out.contains('1'.to_string().as_str()), "history.state should reflect pushed state, got: {out}");
+        assert!(
+            out.contains(r#""page""#) && out.contains('1'.to_string().as_str()),
+            "history.state should reflect pushed state, got: {out}"
+        );
     }
 
     #[test]
     fn single_reexport_target_detects_shim() {
-        assert_eq!(single_reexport_target("import './bundle.js'"), Some("./bundle.js"));
-        assert_eq!(single_reexport_target("import \"../dist/app.js\";"), Some("../dist/app.js"));
-        assert_eq!(single_reexport_target("import '/assets/main.js'\n"), Some("/assets/main.js"));
+        assert_eq!(
+            single_reexport_target("import './bundle.js'"),
+            Some("./bundle.js")
+        );
+        assert_eq!(
+            single_reexport_target("import \"../dist/app.js\";"),
+            Some("../dist/app.js")
+        );
+        assert_eq!(
+            single_reexport_target("import '/assets/main.js'\n"),
+            Some("/assets/main.js")
+        );
         // Multiple statements — not a shim
-        assert_eq!(single_reexport_target("import './a.js'\nimport './b.js'"), None);
+        assert_eq!(
+            single_reexport_target("import './a.js'\nimport './b.js'"),
+            None
+        );
         // Named import — not a bare side-effect import
-        assert_eq!(single_reexport_target("import { foo } from './lib.js'"), None);
+        assert_eq!(
+            single_reexport_target("import { foo } from './lib.js'"),
+            None
+        );
         // Bare specifier (npm package) — don't follow
         assert_eq!(single_reexport_target("import 'react'"), None);
         // Regular IIFE bundle — not a module
@@ -772,7 +895,10 @@ mod tests {
         };
         let html = r#"<html><body><script>document.write('<p>ok</p>');</script></body></html>"#;
         let out = render(html, false, None, &cfg, false, None, None).unwrap();
-        assert!(out.contains("<p>ok</p>"), "inline script renders with proxy configured");
+        assert!(
+            out.contains("<p>ok</p>"),
+            "inline script renders with proxy configured"
+        );
     }
 
     #[test]
@@ -793,6 +919,9 @@ mod tests {
             "</script></body></html>"
         );
         let out = render(html, false, None, &cfg, false, None, None).unwrap();
-        assert!(out.contains("<p>done</p>"), "render completes despite proxy failure");
+        assert!(
+            out.contains("<p>done</p>"),
+            "render completes despite proxy failure"
+        );
     }
 }

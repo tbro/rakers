@@ -74,7 +74,10 @@ pub fn pretty_print(html: &str) -> String {
 
         // DOCTYPE
         if bytes[pos..].starts_with(b"!DOCTYPE") || bytes[pos..].starts_with(b"!doctype") {
-            let end = bytes[pos..].iter().position(|&b| b == b'>').map_or(bytes.len(), |i| pos + i + 1);
+            let end = bytes[pos..]
+                .iter()
+                .position(|&b| b == b'>')
+                .map_or(bytes.len(), |i| pos + i + 1);
             out.push_str(&html[tag_start..end]);
             out.push('\n');
             pos = end;
@@ -83,7 +86,9 @@ pub fn pretty_print(html: &str) -> String {
 
         // Comment <!-- ... -->
         if bytes[pos..].starts_with(b"!--") {
-            let end = html[pos + 3..].find("-->").map_or(bytes.len(), |i| pos + 3 + i + 3);
+            let end = html[pos + 3..]
+                .find("-->")
+                .map_or(bytes.len(), |i| pos + 3 + i + 3);
             ensure_newline_indent(&mut out, indent);
             out.push_str(&html[tag_start..end]);
             pos = end;
@@ -180,25 +185,87 @@ fn push_indent(out: &mut String, indent: usize) {
 fn is_block_tag(name: &str) -> bool {
     matches!(
         name,
-        "html" | "head" | "body"
-        | "div" | "section" | "article" | "main" | "nav" | "header" | "footer" | "aside"
-        | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-        | "ul" | "ol" | "li" | "dl" | "dt" | "dd"
-        | "table" | "thead" | "tbody" | "tfoot" | "tr" | "td" | "th" | "caption" | "colgroup" | "col"
-        | "form" | "fieldset" | "legend" | "details" | "summary"
-        | "figure" | "figcaption" | "blockquote" | "address"
-        | "script" | "style" | "pre" | "textarea" | "noscript" | "template"
-        | "title" | "meta" | "link" | "base"
-        | "hr" | "br"
-        | "canvas" | "video" | "audio" | "iframe" | "object" | "picture"
+        "html"
+            | "head"
+            | "body"
+            | "div"
+            | "section"
+            | "article"
+            | "main"
+            | "nav"
+            | "header"
+            | "footer"
+            | "aside"
+            | "p"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "ul"
+            | "ol"
+            | "li"
+            | "dl"
+            | "dt"
+            | "dd"
+            | "table"
+            | "thead"
+            | "tbody"
+            | "tfoot"
+            | "tr"
+            | "td"
+            | "th"
+            | "caption"
+            | "colgroup"
+            | "col"
+            | "form"
+            | "fieldset"
+            | "legend"
+            | "details"
+            | "summary"
+            | "figure"
+            | "figcaption"
+            | "blockquote"
+            | "address"
+            | "script"
+            | "style"
+            | "pre"
+            | "textarea"
+            | "noscript"
+            | "template"
+            | "title"
+            | "meta"
+            | "link"
+            | "base"
+            | "hr"
+            | "br"
+            | "canvas"
+            | "video"
+            | "audio"
+            | "iframe"
+            | "object"
+            | "picture"
     )
 }
 
 fn is_void_tag(name: &str) -> bool {
     matches!(
         name,
-        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input"
-        | "link" | "meta" | "param" | "source" | "track" | "wbr"
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
     )
 }
 
@@ -234,14 +301,20 @@ mod tests {
         // '<' inside a script body must not be parsed as a tag.
         let input = "<html><body><script>var x = 1 < 2;</script></body></html>";
         let out = pretty_print(input);
-        assert!(out.contains("var x = 1 < 2;"), "script content was corrupted: {out}");
+        assert!(
+            out.contains("var x = 1 < 2;"),
+            "script content was corrupted: {out}"
+        );
     }
 
     #[test]
     fn doctype_preserved() {
         let input = "<!DOCTYPE html><html><body></body></html>";
         let out = pretty_print(input);
-        assert!(out.starts_with("<!DOCTYPE html>\n"), "doctype not at top: {out}");
+        assert!(
+            out.starts_with("<!DOCTYPE html>\n"),
+            "doctype not at top: {out}"
+        );
     }
 
     #[test]

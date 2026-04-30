@@ -103,7 +103,10 @@ fn todomvc_react_renders_ui() {
         .output()
         .unwrap();
 
-    assert!(output.status.success(), "rakers exited with non-zero status");
+    assert!(
+        output.status.success(),
+        "rakers exited with non-zero status"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Raw skeleton has an empty <section id="root">; React fills it in.
@@ -123,16 +126,23 @@ fn todomvc_react_renders_ui() {
 #[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
 fn jsbench_url_renders_react_ui() {
-    let output = cmd()
-        .arg("https://jsbench.me")
-        .output()
-        .unwrap();
+    let output = cmd().arg("https://jsbench.me").output().unwrap();
 
-    assert!(output.status.success(), "rakers exited with non-zero status");
+    assert!(
+        output.status.success(),
+        "rakers exited with non-zero status"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.len() > 4_000, "output too small ({} bytes) — React may not have run", stdout.len());
-    assert!(stdout.to_lowercase().contains("run"), "'run' absent — React UI may not have rendered");
+    assert!(
+        stdout.len() > 4_000,
+        "output too small ({} bytes) — React may not have run",
+        stdout.len()
+    );
+    assert!(
+        stdout.to_lowercase().contains("run"),
+        "'run' absent — React UI may not have rendered"
+    );
 }
 
 #[test]
@@ -172,10 +182,13 @@ fn json_flag_emits_json_object() {
         .stdout
         .clone();
     let s = String::from_utf8(out).unwrap();
-    assert!(s.contains("\"raw_bytes\""),      "raw_bytes field absent");
-    assert!(s.contains("\"rendered_bytes\""), "rendered_bytes field absent");
-    assert!(s.contains("\"html\""),           "html field absent");
-    assert!(s.contains("<p>hi</p>"),          "rendered content absent");
+    assert!(s.contains("\"raw_bytes\""), "raw_bytes field absent");
+    assert!(
+        s.contains("\"rendered_bytes\""),
+        "rendered_bytes field absent"
+    );
+    assert!(s.contains("\"html\""), "html field absent");
+    assert!(s.contains("<p>hi</p>"), "rendered content absent");
 }
 
 #[test]
@@ -190,8 +203,14 @@ fn json_and_pretty_combined() {
         .clone();
     let s = String::from_utf8(out).unwrap();
     // Pretty-printed HTML is embedded inside the JSON html field (newlines escaped).
-    assert!(s.contains("\\n"), "pretty newlines should be JSON-escaped in html field");
-    assert!(s.contains("\"rendered_bytes\""), "rendered_bytes field absent");
+    assert!(
+        s.contains("\\n"),
+        "pretty newlines should be JSON-escaped in html field"
+    );
+    assert!(
+        s.contains("\"rendered_bytes\""),
+        "rendered_bytes field absent"
+    );
 }
 
 #[test]
@@ -205,8 +224,8 @@ fn diff_flag_shows_unified_diff() {
         .stdout
         .clone();
     let s = String::from_utf8(out).unwrap();
-    assert!(s.contains("---"),      "missing --- header");
-    assert!(s.contains("+++"),      "missing +++ header");
+    assert!(s.contains("---"), "missing --- header");
+    assert!(s.contains("+++"), "missing +++ header");
     assert!(s.contains("rendered"), "rendered content absent from diff");
 }
 
@@ -226,9 +245,18 @@ fn max_scripts_skips_remote_fetches() {
         .clone();
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stdout.contains("<p>inline</p>"), "inline script should still run");
-    assert!(!stderr.contains("[fetch]"),      "remote script should not be fetched");
-    assert!(stderr.contains("[skip]"),        "skip message should appear in stderr");
+    assert!(
+        stdout.contains("<p>inline</p>"),
+        "inline script should still run"
+    );
+    assert!(
+        !stderr.contains("[fetch]"),
+        "remote script should not be fetched"
+    );
+    assert!(
+        stderr.contains("[skip]"),
+        "skip message should appear in stderr"
+    );
 }
 
 #[test]
