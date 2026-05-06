@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><title>DOM API fixture</title></head>
+<body>
+<div id="container"></div>
+<script>
+  var container = document.getElementById('container');
+
+  var h2 = document.createElement('h2');
+  h2.className = 'title';
+  h2.textContent = 'Built with DOM API';
+  container.appendChild(h2);
+
+  var p = document.createElement('p');
+  p.setAttribute('data-test', 'true');
+  p.textContent = 'Paragraph via createElement';
+  container.appendChild(p);
+</script>
+</body>
+</html>

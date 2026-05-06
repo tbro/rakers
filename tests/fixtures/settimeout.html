@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head><title>setTimeout fixture</title></head>
+<body>
+<div id="root"></div>
+<script>
+  setTimeout(function() {
+    document.getElementById('root').innerHTML = '<p id="async">Async content loaded</p>';
+  }, 0);
+</script>
+</body>
+</html>
