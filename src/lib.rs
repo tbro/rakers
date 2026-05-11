@@ -152,12 +152,13 @@ fn fetch_script(url: &str, cfg: &HttpConfig) -> Option<String> {
         // import (`import './bundle.js'`) is a Vite/Rollup entry-point shim that
         // just loads one self-contained bundle.  Follow that one hop.
         if let Some(target) = single_reexport_target(trimmed)
-            && let Some(resolved) = resolve_url(target, Some(url)) {
-                if is_verbose() {
-                    eprintln!("[module-shim] {url} → {resolved}");
-                }
-                return fetch_script(&resolved, cfg);
+            && let Some(resolved) = resolve_url(target, Some(url))
+        {
+            if is_verbose() {
+                eprintln!("[module-shim] {url} → {resolved}");
             }
+            return fetch_script(&resolved, cfg);
+        }
         if is_verbose() {
             eprintln!("[skip] {url}: ES module syntax requires a module loader");
         }
