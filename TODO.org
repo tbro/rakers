@@ -46,17 +46,6 @@
    when the ~servo~ crate is stable on crates.io.
 
    
-** CANCELLED Create a rest API with roughly the same functionality as the CLI
-probably use Axum for this, but open to suggestions. this should have a feature
-flag which would be disabled by default. We should also add an end 2 end test
-that tests both the cli and the API using a `demo.html` we keep in the git
-repo. CLI and rest API should give the same results. Reuse as much code as
-possible.
-
-** CANCELLED find a free host provider
-find a place host API (previous TODO). Preferably free. Consider heroku and
-shuttle.dev.
-
 ** DONE the the user to clone repo before installing in README
 this goes in `Install` section
 
