@@ -163,7 +163,7 @@ initial GitHub push; then run ~cargo publish~ with a crates.io API token.
 ** TODO initial push
 Push to github and verify CI is green and binaries are released.
 
-** TODO add blog entry to tbro.github.com
+** DONE add blog entry to tbro.github.com
 
 ** TODO share on linkedin
 link back to blog
