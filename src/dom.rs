@@ -13,8 +13,8 @@ use html5ever::{
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
 
 const VOID_ELEMENTS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
-    "source", "track", "wbr",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
 ];
 
 /// The source of a `<script>` element's JavaScript.
@@ -89,10 +89,9 @@ impl Document {
                 .map(|range| html.replace_range(range, body_html))
                 .is_some();
 
-            if !replaced
-                && let Some((start, end)) = body_content_range(&html) {
-                    html.replace_range(start..end, body_html);
-                }
+            if !replaced && let Some((start, end)) = body_content_range(&html) {
+                html.replace_range(start..end, body_html);
+            }
         }
 
         // Inject document.write() output just before </body>.
@@ -173,10 +172,7 @@ fn find_element_range_by_id(html: &str, id: &str) -> Option<std::ops::Range<usiz
             (Some(o), Some(c)) if o < c => {
                 // Verify this is a real tag boundary (next char is whitespace, '>', or '/').
                 let after = html.as_bytes().get(o + open_pat.len()).copied();
-                if matches!(
-                    after,
-                    Some(b' ' | b'\t' | b'\n' | b'>' | b'/')
-                ) {
+                if matches!(after, Some(b' ' | b'\t' | b'\n' | b'>' | b'/')) {
                     depth += 1;
                 }
                 pos = o + open_pat.len();
@@ -291,9 +287,10 @@ fn collect_meta_tags(handle: &Handle, map: &mut std::collections::HashMap<String
             .find(|a| &a.name.local == "content")
             .map(|a| a.value.to_string());
         if let (Some(n), Some(c)) = (name_val, content_val)
-            && !n.is_empty() {
-                map.insert(n, c);
-            }
+            && !n.is_empty()
+        {
+            map.insert(n, c);
+        }
     }
     for child in handle.children.borrow().iter() {
         collect_meta_tags(child, map);

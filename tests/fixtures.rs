@@ -7,10 +7,18 @@ use std::fs;
 
 fn render_fixture(name: &str) -> String {
     let path = format!("tests/fixtures/{name}");
-    let html = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("failed to read fixture {path}: {e}"));
-    render(&html, false, None, &HttpConfig::default(), false, None, None)
-        .unwrap_or_else(|e| panic!("render failed for {name}: {e}"))
+    let html =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read fixture {path}: {e}"));
+    render(
+        &html,
+        false,
+        None,
+        &HttpConfig::default(),
+        false,
+        None,
+        None,
+    )
+    .unwrap_or_else(|e| panic!("render failed for {name}: {e}"))
 }
 
 #[test]
@@ -24,10 +32,7 @@ fn document_write_renders_list() {
 #[test]
 fn inner_html_renders_spa_content() {
     let out = render_fixture("inner_html.html");
-    assert!(
-        out.contains("<h1>Rendered by JS</h1>"),
-        "h1 missing: {out}"
-    );
+    assert!(out.contains("<h1>Rendered by JS</h1>"), "h1 missing: {out}");
     assert!(
         out.contains("SPA-style rendering"),
         "paragraph text missing: {out}"

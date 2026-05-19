@@ -127,9 +127,7 @@ fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
         Ok((body, false))
     } else {
         let content = fs::read_to_string(input)?;
-        let is_js = Path::new(input)
-            .extension()
-            .is_some_and(|e| e == "js");
+        let is_js = Path::new(input).extension().is_some_and(|e| e == "js");
         Ok((content, is_js))
     }
 }
@@ -141,7 +139,9 @@ fn main() -> anyhow::Result<()> {
 
     let page_url = cli.input.as_deref().filter(|s| is_url(s));
 
-    let (input, is_js) = if let Some(src) = &cli.input { fetch(src, &cfg)? } else {
+    let (input, is_js) = if let Some(src) = &cli.input {
+        fetch(src, &cfg)?
+    } else {
         let mut s = String::new();
         io::stdin().read_to_string(&mut s)?;
         (s, false)

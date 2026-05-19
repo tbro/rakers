@@ -260,6 +260,7 @@ fn max_scripts_skips_remote_fetches() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "rquickjs"), ignore = "boa has no interrupt handler")]
 fn timeout_kills_infinite_loop() {
     cmd()
         .args(["--timeout", "1"])
@@ -276,6 +277,7 @@ fn timeout_kills_infinite_loop() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "rquickjs"), ignore = "boa has no interrupt handler")]
 fn timeout_subsecond_kills_loop() {
     cmd()
         .args(["--timeout", "0.5"])

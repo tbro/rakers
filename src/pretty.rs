@@ -77,9 +77,14 @@ pub fn pretty_print(html: &str) -> String {
         let is_block = is_block_tag(&tag_name);
         let is_void = is_void_tag(&tag_name);
         emit_tag(
-            &mut out, tag_str, &tag_name,
-            is_closing, is_block, is_void,
-            &mut indent, &mut in_raw,
+            &mut out,
+            tag_str,
+            &tag_name,
+            is_closing,
+            is_block,
+            is_void,
+            &mut indent,
+            &mut in_raw,
         );
     }
 

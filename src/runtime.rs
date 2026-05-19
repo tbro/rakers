@@ -262,12 +262,7 @@ mod quickjs_rt {
     struct StubModuleSystem;
 
     impl Resolver for StubModuleSystem {
-        fn resolve(
-            &mut self,
-            _ctx: &Ctx<'_>,
-            _base: &str,
-            name: &str,
-        ) -> rquickjs::Result<String> {
+        fn resolve(&mut self, _ctx: &Ctx<'_>, _base: &str, name: &str) -> rquickjs::Result<String> {
             Ok(name.to_string())
         }
     }
@@ -388,9 +383,10 @@ mod quickjs_rt {
                             let msg = e.message().unwrap_or_else(|| "unknown exception".into());
                             eprintln!("[js error] {msg}");
                             if crate::is_verbose()
-                                && let Some(stack) = e.stack() {
-                                    eprintln!("[js stack] {stack}");
-                                }
+                                && let Some(stack) = e.stack()
+                            {
+                                eprintln!("[js stack] {stack}");
+                            }
                         }
                     }
                     // Drain Promise microtasks after each script so .then() chains fire
@@ -526,9 +522,7 @@ mod quickjs_rt {
         console
             .set("info", log_fn.clone())
             .map_err(|e| anyhow!("{e:?}"))?;
-        console
-            .set("debug", log_fn)
-            .map_err(|e| anyhow!("{e:?}"))?;
+        console.set("debug", log_fn).map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("table", noop_fn.clone())
             .map_err(|e| anyhow!("{e:?}"))?;
@@ -571,9 +565,10 @@ mod quickjs_rt {
             }
             let mut builder = ureq::AgentBuilder::new();
             if let Some(ref proxy_url) = proxy
-                && let Ok(p) = ureq::Proxy::new(proxy_url) {
-                    builder = builder.proxy(p);
-                }
+                && let Ok(p) = ureq::Proxy::new(proxy_url)
+            {
+                builder = builder.proxy(p);
+            }
             if let Some(dur) = timeout {
                 builder = builder.timeout(dur);
             }
