@@ -14,6 +14,7 @@ use std::{
     name = "rakers",
     about = "Render JavaScript into HTML using Servo's HTML parser (html5ever)"
 )]
+#[allow(clippy::struct_excessive_bools)]
 struct Cli {
     /// File path, URL (http/https), or omit to read stdin as HTML
     input: Option<String>,
@@ -43,7 +44,7 @@ struct Cli {
     #[arg(long)]
     pretty: bool,
 
-    /// Emit a JSON object with raw_bytes, rendered_bytes, and html fields
+    /// Emit a JSON object with `raw_bytes`, `rendered_bytes`, and html fields
     /// instead of bare HTML — useful for scripting and size comparisons.
     #[arg(long)]
     json: bool,
@@ -81,7 +82,7 @@ struct Cli {
 
     /// Proxy URL for all outbound HTTP requests (page fetch, script fetches, XHR).
     /// Supports SOCKS5 (socks5://), SOCKS4 (socks4://), and HTTP (http://) proxies.
-    /// Example: --proxy socks5://127.0.0.1:9050 (routes traffic through Tor).
+    /// Example: --proxy <socks5://127.0.0.1:9050> (routes traffic through Tor).
     #[arg(long, value_name = "URL")]
     proxy: Option<String>,
 
@@ -105,7 +106,7 @@ fn http_config_from_cli(cli: &Cli) -> anyhow::Result<HttpConfig> {
     for raw in &cli.headers {
         let (name, value) = raw
             .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("invalid header {:?}: expected \"Name: Value\"", raw))?;
+            .ok_or_else(|| anyhow::anyhow!("invalid header {raw:?}: expected \"Name: Value\""))?;
         headers.push((name.trim().to_owned(), value.trim().to_owned()));
     }
     Ok(HttpConfig {
@@ -128,8 +129,7 @@ fn fetch(input: &str, cfg: &HttpConfig) -> anyhow::Result<(String, bool)> {
         let content = fs::read_to_string(input)?;
         let is_js = Path::new(input)
             .extension()
-            .map(|e| e == "js")
-            .unwrap_or(false);
+            .is_some_and(|e| e == "js");
         Ok((content, is_js))
     }
 }
@@ -141,13 +141,10 @@ fn main() -> anyhow::Result<()> {
 
     let page_url = cli.input.as_deref().filter(|s| is_url(s));
 
-    let (input, is_js) = match &cli.input {
-        Some(src) => fetch(src, &cfg)?,
-        None => {
-            let mut s = String::new();
-            io::stdin().read_to_string(&mut s)?;
-            (s, false)
-        }
+    let (input, is_js) = if let Some(src) = &cli.input { fetch(src, &cfg)? } else {
+        let mut s = String::new();
+        io::stdin().read_to_string(&mut s)?;
+        (s, false)
     };
 
     let script_timeout = if cli.no_timeout {

@@ -1,6 +1,6 @@
 //! HTML parsing, script extraction, and serialization.
 //!
-//! Wraps html5ever and markup5ever_rcdom to provide the three operations
+//! Wraps html5ever and `markup5ever_rcdom` to provide the three operations
 //! the rendering pipeline needs: parse an HTML string into a DOM, walk the
 //! DOM to collect `<script>` sources in document order, and serialize the
 //! (optionally mutated) DOM back to an HTML string.
@@ -11,6 +11,11 @@ use html5ever::{
     tendril::TendrilSink,
 };
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+
+const VOID_ELEMENTS: &[&str] = &[
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
+    "source", "track", "wbr",
+];
 
 /// The source of a `<script>` element's JavaScript.
 pub enum ScriptSource {
@@ -139,7 +144,7 @@ fn first_element_id(html: &str) -> Option<String> {
 /// Returns a range spanning the full element — opening tag through closing tag.
 /// Handles nested same-name elements via a depth counter.
 fn find_element_range_by_id(html: &str, id: &str) -> Option<std::ops::Range<usize>> {
-    let needle = format!("id=\"{}\"", id);
+    let needle = format!("id=\"{id}\"");
     let attr_pos = html.find(&needle)?;
     let tag_start = html[..attr_pos].rfind('<')?;
 
@@ -149,18 +154,13 @@ fn find_element_range_by_id(html: &str, id: &str) -> Option<std::ops::Range<usiz
 
     let open_end = html[tag_start..].find('>')? + tag_start + 1;
 
-    // Void elements have no closing tag.
-    const VOID: &[&str] = &[
-        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
-        "source", "track", "wbr",
-    ];
-    if VOID.contains(&tag_name.as_str()) || html[tag_start..open_end].ends_with("/>") {
+    if VOID_ELEMENTS.contains(&tag_name.as_str()) || html[tag_start..open_end].ends_with("/>") {
         return Some(tag_start..open_end);
     }
 
     // Walk forward, counting open/close tags of the same name to find the match.
-    let open_pat = format!("<{}", tag_name); // e.g. "<div"
-    let close_pat = format!("</{}>", tag_name); // e.g. "</div>"
+    let open_pat = format!("<{tag_name}"); // e.g. "<div"
+    let close_pat = format!("</{tag_name}>"); // e.g. "</div>"
     let mut depth: usize = 1;
     let mut pos = open_end;
 
@@ -175,7 +175,7 @@ fn find_element_range_by_id(html: &str, id: &str) -> Option<std::ops::Range<usiz
                 let after = html.as_bytes().get(o + open_pat.len()).copied();
                 if matches!(
                     after,
-                    Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'>') | Some(b'/')
+                    Some(b' ' | b'\t' | b'\n' | b'>' | b'/')
                 ) {
                     depth += 1;
                 }

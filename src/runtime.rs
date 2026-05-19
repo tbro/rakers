@@ -17,7 +17,7 @@ const BOOTSTRAP_TEMPLATE: &str = include_str!("bootstrap.js");
 
 // Flush one batch of _r_timers; returns the number of timers remaining after the flush.
 // Called in a Rust loop so execute_pending_job() can drain Promise microtasks between passes.
-const TIMER_FLUSH_JS: &str = r#"
+const TIMER_FLUSH_JS: &str = r"
 (function() {
     if (_r_timers.length === 0) return 0;
     var batch = _r_timers.splice(0, _r_timers.length);
@@ -28,10 +28,10 @@ const TIMER_FLUSH_JS: &str = r#"
     }
     return _r_timers.length;
 })()
-"#;
+";
 
 // Read the rendered DOM state after all timers and microtasks have been flushed.
-const READBACK_JS: &str = r#"
+const READBACK_JS: &str = r"
 (function() {
     var body = document.body && document.body.innerHTML;
     if (body) return body;
@@ -45,7 +45,7 @@ const READBACK_JS: &str = r#"
     }
     return parts.join('');
 })()
-"#;
+";
 
 /// Produce the browser-globals bootstrap by substituting the page URL into the template.
 fn make_bootstrap(page_url: Option<&str>) -> String {
@@ -151,17 +151,17 @@ mod boa_rt {
         }
 
         /// Return the accumulated output of all `document.write` / `document.writeln` calls.
-        pub fn written_html(&self) -> String {
+        pub fn written_html() -> String {
             WRITTEN.with(|w| w.borrow().clone())
         }
 
         /// Return the final value of `document.body.innerHTML` (or registry element content).
-        pub fn body_inner_html(&self) -> String {
+        pub fn body_inner_html() -> String {
             BODY_INNER_HTML.with(|b| b.borrow().clone())
         }
 
         /// Return all messages logged via `console.log`, `console.warn`, or `console.error`.
-        pub fn logged_messages(&self) -> Vec<String> {
+        pub fn logged_messages() -> Vec<String> {
             LOGGED.with(|l| l.borrow().clone())
         }
     }
@@ -262,9 +262,9 @@ mod quickjs_rt {
     struct StubModuleSystem;
 
     impl Resolver for StubModuleSystem {
-        fn resolve<'js>(
+        fn resolve(
             &mut self,
-            _ctx: &Ctx<'js>,
+            _ctx: &Ctx<'_>,
             _base: &str,
             name: &str,
         ) -> rquickjs::Result<String> {
@@ -329,7 +329,7 @@ mod quickjs_rt {
         /// Evaluate the browser bootstrap and then each script in `scripts` in order.
         ///
         /// Scripts are evaluated in sloppy (non-strict) mode to match browser behaviour —
-        /// assignments to undeclared globals are allowed, as used by SvelteKit and webpack.
+        /// assignments to undeclared globals are allowed, as used by `SvelteKit` and webpack.
         /// Errors from individual scripts are printed to stderr and skipped; the method
         /// only returns `Err` if the bootstrap itself fails to evaluate.
         pub fn execute(
@@ -338,13 +338,13 @@ mod quickjs_rt {
             page_url: Option<&str>,
             cfg: &crate::HttpConfig,
         ) -> anyhow::Result<()> {
-            XHR_UA.with(|u| *u.borrow_mut() = cfg.user_agent.clone());
-            XHR_HEADERS.with(|h| *h.borrow_mut() = cfg.headers.clone());
-            XHR_PROXY.with(|p| *p.borrow_mut() = cfg.proxy.clone());
+            XHR_UA.with(|u| u.borrow_mut().clone_from(&cfg.user_agent));
+            XHR_HEADERS.with(|h| h.borrow_mut().clone_from(&cfg.headers));
+            XHR_PROXY.with(|p| p.borrow_mut().clone_from(&cfg.proxy));
             XHR_TIMEOUT.with(|t| *t.borrow_mut() = self.timeout);
             XHR_FORWARD_HEADERS.with(|f| f.set(cfg.forward_headers));
 
-            let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {:?}", e))?;
+            let rt = Runtime::new().map_err(|e| anyhow!("quickjs runtime: {e:?}"))?;
             rt.set_loader(StubModuleSystem, StubModuleSystem);
 
             // Check the per-script deadline every 10 000 opcodes to keep overhead near zero.
@@ -359,12 +359,12 @@ mod quickjs_rt {
                 }
             })));
 
-            let ctx = Context::full(&rt).map_err(|e| anyhow!("quickjs context: {:?}", e))?;
+            let ctx = Context::full(&rt).map_err(|e| anyhow!("quickjs context: {e:?}"))?;
 
             ctx.with(|ctx| -> anyhow::Result<()> {
-                setup_document(ctx.clone())?;
-                setup_console(ctx.clone())?;
-                setup_xhr_fetch(ctx.clone())?;
+                setup_document(&ctx)?;
+                setup_console(&ctx)?;
+                setup_xhr_fetch(&ctx)?;
 
                 let sloppy = || {
                     let mut o = EvalOptions::default();
@@ -374,7 +374,7 @@ mod quickjs_rt {
 
                 let bootstrap = super::make_bootstrap(page_url);
                 ctx.eval_with_options::<Value, _>(bootstrap, sloppy())
-                    .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
+                    .map_err(|e| anyhow!("bootstrap error: {e:?}"))?;
 
                 for script in scripts {
                     if let Some(t) = self.timeout {
@@ -386,10 +386,10 @@ mod quickjs_rt {
                         let exc = ctx.catch();
                         if let Some(e) = exc.as_exception() {
                             let msg = e.message().unwrap_or_else(|| "unknown exception".into());
-                            eprintln!("[js error] {}", msg);
+                            eprintln!("[js error] {msg}");
                             if crate::is_verbose()
                                 && let Some(stack) = e.stack() {
-                                    eprintln!("[js stack] {}", stack);
+                                    eprintln!("[js stack] {stack}");
                                 }
                         }
                     }
@@ -449,24 +449,24 @@ mod quickjs_rt {
         }
 
         /// Return the accumulated output of all `document.write` / `document.writeln` calls.
-        pub fn written_html(&self) -> String {
+        pub fn written_html() -> String {
             WRITTEN.with(|w| w.borrow().clone())
         }
 
         /// Return the final value of `document.body.innerHTML` (or registry element content).
-        pub fn body_inner_html(&self) -> String {
+        pub fn body_inner_html() -> String {
             BODY_INNER_HTML.with(|b| b.borrow().clone())
         }
 
         /// Return all messages logged via `console.log`, `console.warn`, or `console.error`.
-        pub fn logged_messages(&self) -> Vec<String> {
+        pub fn logged_messages() -> Vec<String> {
             LOGGED.with(|l| l.borrow().clone())
         }
     }
 
     /// Register `document.write` and `document.writeln`.
-    fn setup_document(ctx: Ctx<'_>) -> anyhow::Result<()> {
-        let doc = Object::new(ctx.clone()).map_err(|e| anyhow!("{:?}", e))?;
+    fn setup_document(ctx: &Ctx<'_>) -> anyhow::Result<()> {
+        let doc = Object::new(ctx.clone()).map_err(|e| anyhow!("{e:?}"))?;
 
         doc.set(
             "write",
@@ -474,9 +474,9 @@ mod quickjs_rt {
                 WRITTEN.with(|w| w.borrow_mut().push_str(&s));
                 Ok::<(), rquickjs::Error>(())
             })
-            .map_err(|e| anyhow!("{:?}", e))?,
+            .map_err(|e| anyhow!("{e:?}"))?,
         )
-        .map_err(|e| anyhow!("{:?}", e))?;
+        .map_err(|e| anyhow!("{e:?}"))?;
 
         doc.set(
             "writeln",
@@ -488,84 +488,84 @@ mod quickjs_rt {
                 });
                 Ok::<(), rquickjs::Error>(())
             })
-            .map_err(|e| anyhow!("{:?}", e))?,
+            .map_err(|e| anyhow!("{e:?}"))?,
         )
-        .map_err(|e| anyhow!("{:?}", e))?;
+        .map_err(|e| anyhow!("{e:?}"))?;
 
         ctx.globals()
             .set("document", doc)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         Ok(())
     }
 
     /// Register `console.log`, `console.warn`, and `console.error`.
-    fn setup_console(ctx: Ctx<'_>) -> anyhow::Result<()> {
+    fn setup_console(ctx: &Ctx<'_>) -> anyhow::Result<()> {
         use rquickjs::function::Rest;
 
-        let console = Object::new(ctx.clone()).map_err(|e| anyhow!("{:?}", e))?;
+        let console = Object::new(ctx.clone()).map_err(|e| anyhow!("{e:?}"))?;
 
         let log_fn = Function::new(ctx.clone(), |args: Rest<rquickjs::Coerced<String>>| {
             let parts: Vec<String> = args.0.into_iter().map(|s| s.0).collect();
             LOGGED.with(|l| l.borrow_mut().push(parts.join(" ")));
             Ok::<(), rquickjs::Error>(())
         })
-        .map_err(|e| anyhow!("{:?}", e))?;
+        .map_err(|e| anyhow!("{e:?}"))?;
 
         let noop_fn = Function::new(ctx.clone(), || Ok::<(), rquickjs::Error>(()))
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
 
         console
             .set("log", log_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("warn", log_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("error", log_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("info", log_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("debug", log_fn)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("table", noop_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("group", noop_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("groupEnd", noop_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("groupCollapsed", noop_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("time", noop_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("timeEnd", noop_fn.clone())
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         console
             .set("assert", noop_fn)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
 
         ctx.globals()
             .set("console", console)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         Ok(())
     }
 
     /// Register `_r_fetch_sync(url)` — a synchronous HTTP GET used by the XHR stub
-    /// so frameworks that XHR-load templates (e.g. RiotJS) get real response bodies.
-    fn setup_xhr_fetch(ctx: Ctx<'_>) -> anyhow::Result<()> {
+    /// so frameworks that XHR-load templates (e.g. `RiotJS`) get real response bodies.
+    fn setup_xhr_fetch(ctx: &Ctx<'_>) -> anyhow::Result<()> {
         let fetch_fn = Function::new(ctx.clone(), |url: String| -> String {
             let ua = XHR_UA.with(|u| u.borrow().clone());
             let headers = XHR_HEADERS.with(|h| h.borrow().clone());
             let proxy = XHR_PROXY.with(|p| p.borrow().clone());
             let timeout = XHR_TIMEOUT.with(|t| *t.borrow());
-            let forward_hdrs = XHR_FORWARD_HEADERS.with(|f| f.get());
+            let forward_hdrs = XHR_FORWARD_HEADERS.with(std::cell::Cell::get);
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 return String::new();
             }
@@ -592,11 +592,11 @@ mod quickjs_rt {
                 Err(_) => String::new(),
             }
         })
-        .map_err(|e| anyhow!("{:?}", e))?;
+        .map_err(|e| anyhow!("{e:?}"))?;
 
         ctx.globals()
             .set("_r_fetch_sync", fetch_fn)
-            .map_err(|e| anyhow!("{:?}", e))?;
+            .map_err(|e| anyhow!("{e:?}"))?;
         Ok(())
     }
 }

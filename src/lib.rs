@@ -14,6 +14,7 @@ pub use pretty::pretty_print;
 pub use select::select_html;
 
 use std::cell::Cell;
+use std::fmt::Write as _;
 use std::time::Duration;
 
 thread_local! {
@@ -30,13 +31,14 @@ pub fn set_verbose(v: bool) {
 }
 
 fn is_verbose() -> bool {
-    VERBOSE.with(|c| c.get())
+    VERBOSE.with(std::cell::Cell::get)
 }
 
 /// Serialize render results as a JSON object with three fields:
 /// `raw_bytes`, `rendered_bytes`, and `html`.
 ///
 /// The `html` string is JSON-escaped; no external dependency is required.
+#[must_use] 
 pub fn to_json(raw_bytes: usize, html: &str) -> String {
     format!(
         "{{\n  \"raw_bytes\": {},\n  \"rendered_bytes\": {},\n  \"html\": \"{}\"\n}}\n",
@@ -55,7 +57,7 @@ fn json_escape(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x20 => write!(out, "\\u{:04x}", c as u32).unwrap(),
             c => out.push(c),
         }
     }
@@ -80,6 +82,7 @@ pub struct HttpConfig {
 
 impl HttpConfig {
     /// Build a `ureq` agent with proxy configured (if any).
+    #[must_use] 
     pub fn agent(&self) -> ureq::Agent {
         let mut builder = ureq::AgentBuilder::new();
         if let Some(ref proxy_url) = self.proxy {
@@ -248,20 +251,21 @@ fn load_scripts(
 
 /// Build a JS snippet that declares `_r_meta`, exposing all `<meta name=… content=…>`
 /// elements so `document.querySelector('meta[name="X"]')` can look them up.
-fn build_meta_script(meta: std::collections::HashMap<String, String>) -> String {
+fn build_meta_script(meta: &std::collections::HashMap<String, String>) -> String {
     if meta.is_empty() {
         return String::new();
     }
     let mut out = String::from("var _r_meta = {");
-    for (name, content) in &meta {
+    for (name, content) in meta {
         let name_esc = name.replace('\\', "\\\\").replace('\'', "\\'");
         let content_esc = content.replace('\\', "\\\\").replace('\'', "\\'");
-        out.push_str(&format!(
-            "'{}':{{name:'{}',content:'{}',\
+        write!(
+            out,
+            "'{name_esc}':{{name:'{name_esc}',content:'{content_esc}',\
             getAttribute:function(n){{return n==='content'?this.content:n==='name'?this.name:null;}},\
-            hasAttribute:function(n){{return n==='content'||n==='name';}}}},",
-            name_esc, name_esc, content_esc
-        ));
+            hasAttribute:function(n){{return n==='content'||n==='name';}}}},"
+        )
+        .unwrap();
     }
     out.push_str("};");
     out
@@ -279,6 +283,10 @@ fn build_meta_script(meta: std::collections::HashMap<String, String>) -> String 
 /// `console.log/warn/error` output is printed to stderr with a `[console]` prefix.
 ///
 /// When `clean` is `true` a post-processing pass is applied (see [`clean_document`]).
+///
+/// # Errors
+///
+/// Returns an error if the JS bootstrap fails to evaluate.
 pub fn render(
     input: &str,
     is_js: bool,
@@ -295,7 +303,7 @@ pub fn render(
     };
 
     let doc = dom::parse(&html);
-    let meta_script = build_meta_script(doc.collect_meta());
+    let meta_script = build_meta_script(&doc.collect_meta());
     let mut scripts = load_scripts(doc.extract_scripts(), page_url, cfg, max_scripts);
     if !meta_script.is_empty() {
         scripts.insert(0, meta_script);
@@ -307,13 +315,13 @@ pub fn render(
     };
     rt.execute(&scripts, page_url, cfg)?;
 
-    for msg in rt.logged_messages() {
+    for msg in runtime::JsRuntime::logged_messages() {
         if is_verbose() {
             eprintln!("[console] {msg}");
         }
     }
 
-    let body_html = rt.body_inner_html();
+    let body_html = runtime::JsRuntime::body_inner_html();
 
     // Avoid clobbering large server-rendered bodies (SSR sites) with a tiny JS DOM
     // result (e.g. a measurement div appended for scrollbar detection).
@@ -327,7 +335,7 @@ pub fn render(
         ""
     };
 
-    let out = doc.serialize_with_body_and_injection(effective_body, &rt.written_html());
+    let out = doc.serialize_with_body_and_injection(effective_body, &runtime::JsRuntime::written_html());
     Ok(if clean { clean_document(out) } else { out })
 }
 
@@ -340,6 +348,7 @@ pub fn render(
 /// - `<link rel="modulepreload">` and `<link rel="preload" as="script">` are removed.
 /// - `<noscript>` wrappers are removed but their inner content is kept, so
 ///   crawlers see any fallback markup (e.g. `<meta>` redirects, image links).
+#[must_use] 
 pub fn clean_document(mut html: String) -> String {
     html = remove_script_elements(html);
     html = remove_preload_links(html);
@@ -356,14 +365,13 @@ fn remove_script_elements(mut html: String) -> String {
         let next = html.as_bytes().get(start + OPEN.len()).copied();
         if !matches!(
             next,
-            Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r') | Some(b'>') | Some(b'/') | None
+            Some(b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'/') | None
         ) {
             break;
         }
         let end = html[start..]
             .find(CLOSE)
-            .map(|p| start + p + CLOSE.len())
-            .unwrap_or(html.len());
+            .map_or(html.len(), |p| start + p + CLOSE.len());
         html.drain(start..end);
     }
     html
@@ -422,8 +430,7 @@ fn raw_body_content_len(html: &str) -> usize {
     let body_start = html.find("<body").unwrap_or(0);
     let content_start = html[body_start..]
         .find('>')
-        .map(|i| i + body_start + 1)
-        .unwrap_or(0);
+        .map_or(0, |i| i + body_start + 1);
     let body_end = html.rfind("</body>").unwrap_or(html.len());
     let body = &html[content_start.min(body_end)..body_end];
     // Exclude <script> tags so SPAs with many script src= references aren't
@@ -445,6 +452,10 @@ fn raw_body_content_len(html: &str) -> usize {
 /// Fetch `url`, execute its scripts, and return the rendered HTML.
 ///
 /// Convenience wrapper around [`render`] that handles the HTTP fetch.
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request fails or if script execution fails.
 pub fn render_url(url: &str, cfg: &HttpConfig, clean: bool) -> anyhow::Result<String> {
     let body = cfg.apply(cfg.agent().get(url)).call()?.into_string()?;
     render(
@@ -513,7 +524,7 @@ mod tests {
         let rt = runtime::JsRuntime::with_timeout(std::time::Duration::from_secs(30));
         rt.execute(&[js.to_owned()], None, &HttpConfig::default())
             .unwrap();
-        let msgs = rt.logged_messages();
+        let msgs = runtime::JsRuntime::logged_messages();
         assert_eq!(msgs[0], "hello world");
         assert_eq!(msgs[1], "oops");
     }
@@ -702,7 +713,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            rt.written_html().contains("<p>survived</p>"),
+            runtime::JsRuntime::written_html().contains("<p>survived</p>"),
             "second script must run after timeout interrupts the first"
         );
     }
