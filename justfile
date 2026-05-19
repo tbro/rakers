@@ -42,6 +42,10 @@ smoke:
 smoke-local bin:
     bash scripts/smoke_test_release.sh {{bin}}
 
+# Bump version, commit, and tag (usage: just bump 0.2.0 or just bump v0.2.0)
+bump version:
+    bash scripts/bump_version.sh {{version}}
+
 # Configure git to use the committed hooks in .githooks/
 install-hooks:
     git config core.hooksPath .githooks
