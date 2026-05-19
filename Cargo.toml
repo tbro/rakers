@@ -1,6 +1,6 @@
 [package]
 name = "rakers"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Lightweight headless JS renderer — executes JavaScript and returns the rendered HTML"
 license = "MIT"
