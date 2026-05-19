@@ -42,6 +42,11 @@ smoke:
 smoke-local bin:
     bash scripts/smoke_test_release.sh {{bin}}
 
+# Configure git to use the committed hooks in .githooks/
+install-hooks:
+    git config core.hooksPath .githooks
+    @echo "Hooks installed (.githooks/pre-push active)"
+
 # Tag and push a release (usage: just release v0.2.0)
 release tag:
     git tag {{tag}}
