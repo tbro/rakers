@@ -84,8 +84,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
             asset: rakers-linux-x86_64
+            extra_packages: musl-tools
           - os: macos-latest
             target: aarch64-apple-darwin
             asset: rakers-macos-aarch64
@@ -94,6 +95,9 @@ jobs:
             asset: rakers-macos-x86_64
     steps:
       - uses: actions/checkout@v4
+      - name: Install extra packages
+        if: matrix.extra_packages != ''
+        run: sudo apt-get install -y ${{ matrix.extra_packages }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
