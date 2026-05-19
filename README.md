@@ -10,15 +10,36 @@ Built on [html5ever](https://github.com/servo/html5ever) (Servo's HTML5 parser) 
 
 ## Install
 
-    git clone https://github.com/tbro/rakers && cd rakers
+### Pre-built binaries (recommended)
 
-### Default build (QuickJS engine — requires a C compiler)
+Download the latest release binary for your platform from the [releases page](https://github.com/tbro/rakers/releases/latest):
 
-    cargo install --path .
+| Platform | Binary |
+|----------|--------|
+| Linux x86-64 | `rakers-linux-x86_64` |
+| macOS Apple Silicon | `rakers-macos-aarch64` |
+| macOS Intel | `rakers-macos-x86_64` |
 
-### boa engine (pure Rust, no C compiler required)
+```sh
+# Linux example
+curl -L https://github.com/tbro/rakers/releases/latest/download/rakers-linux-x86_64 -o rakers
+chmod +x rakers
+sudo mv rakers /usr/local/bin/
+```
 
-    cargo install --path . --no-default-features --features boa
+### Build from source
+
+Requires [Rust](https://rustup.rs) and a C compiler (for the default QuickJS engine).
+
+```sh
+cargo install --path .
+```
+
+For a pure-Rust build without a C compiler, use the boa engine instead:
+
+```sh
+cargo install --path . --no-default-features --features boa
+```
 
 
 ## Usage
