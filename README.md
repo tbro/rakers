@@ -21,7 +21,6 @@ Download the latest release binary for your platform from the [releases page](ht
 |----------|--------|
 | Linux x86-64 | `rakers-linux-x86_64` |
 | macOS Apple Silicon | `rakers-macos-aarch64` |
-| macOS Intel | `rakers-macos-x86_64` |
 
 ```sh
 # Linux example
