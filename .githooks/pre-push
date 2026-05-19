@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-# Block a version tag push when it doesn't match the version in Cargo.toml.
+# Guards on version tag pushes:
+#   1. Tag version must match Cargo.toml version.
+#   2. Tagged commit must already exist on origin/main.
 
 set -euo pipefail
 
-while read -r local_ref _local_sha _remote_ref _remote_sha; do
+while read -r local_ref local_sha _remote_ref _remote_sha; do
     if [[ "$local_ref" == refs/tags/v* ]]; then
         tag_version="${local_ref#refs/tags/v}"
         cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
         if [ "$tag_version" != "$cargo_version" ]; then
             echo "error: tag $local_ref does not match Cargo.toml version (\"$cargo_version\")"
             echo "       bump version in Cargo.toml to $tag_version before pushing this tag"
+            exit 1
+        fi
+
+        tag_commit=$(git rev-list -n 1 "$local_sha")
+        if ! git merge-base --is-ancestor "$tag_commit" origin/main 2>/dev/null; then
+            echo "error: tagged commit $(git rev-parse --short "$tag_commit") is not on origin/main"
+            echo "       push your commits to main before pushing this tag"
             exit 1
         fi
     fi
