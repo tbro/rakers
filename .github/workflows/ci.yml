@@ -75,7 +75,7 @@ jobs:
 
   release:
     name: Release (${{ matrix.target }})
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !matrix.skip
     needs: [fmt, clippy, test]
     runs-on: ${{ matrix.os }}
     permissions:
@@ -90,9 +90,13 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             asset: rakers-macos-aarch64
+          # Disabled: macos-13 (Intel) runners are slow and frequently backlogged.
+          # Intel Mac users can build from source: cargo install --path .
+          # Re-enable if demand warrants a pre-built Intel binary.
           - os: macos-13
             target: x86_64-apple-darwin
             asset: rakers-macos-x86_64
+            skip: true
     steps:
       - uses: actions/checkout@v4
       - name: Install extra packages
