@@ -1,5 +1,8 @@
 # rakers
 
+[![Crates.io](https://img.shields.io/crates/v/rakers)](https://crates.io/crates/rakers)
+[![docs.rs](https://img.shields.io/docsrs/rakers)](https://docs.rs/rakers)
+
 A lightweight, single-binary JS renderer for JavaScript SPAs and SSR sites,
 where startup latency (milliseconds vs. 1-2 seconds) and memory footprint
 (~10 MB vs. ~300 MB) matter more than compatibility breadth.
