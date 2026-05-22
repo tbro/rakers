@@ -87,7 +87,7 @@ fn jsbench_react_spa_renders_ui() {
 /// This test specifically exercises two shim fixes:
 ///   - getElementsByTagName('script') → needed by the GA analytics snippet
 ///   - querySelector('head')          → needed by style-loader CSS injection
-/// Without those fixes the bundle crashed before mounting and produced no output.
+///     Without those fixes the bundle crashed before mounting and produced no output.
 #[test]
 #[ignore = "live network test — flaky in CI"]
 #[cfg_attr(feature = "boa", ignore = "boa overflows on large React bundles")]
