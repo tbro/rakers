@@ -14,7 +14,6 @@ pub use pretty::pretty_print;
 pub use select::select_html;
 
 use std::cell::Cell;
-use std::fmt::Write as _;
 use std::time::Duration;
 
 thread_local! {
@@ -57,7 +56,7 @@ fn json_escape(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => write!(out, "\\u{:04x}", c as u32).unwrap(),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
             c => out.push(c),
         }
     }
@@ -259,13 +258,11 @@ fn build_meta_script(meta: &std::collections::HashMap<String, String>) -> String
     for (name, content) in meta {
         let name_esc = name.replace('\\', "\\\\").replace('\'', "\\'");
         let content_esc = content.replace('\\', "\\\\").replace('\'', "\\'");
-        write!(
-            out,
-            "'{name_esc}':{{name:'{name_esc}',content:'{content_esc}',\
-            getAttribute:function(n){{return n==='content'?this.content:n==='name'?this.name:null;}},\
-            hasAttribute:function(n){{return n==='content'||n==='name';}}}},"
-        )
-        .unwrap();
+        out.push_str(&format!(
+            "'{name_esc}':{{name:'{name_esc}',content:'{content_esc}',\\\
+            getAttribute:function(n){{return n==='content'?this.content:n==='name'?this.name:null;}},\\\
+            hasAttribute:function(n){{return n==='content'||n==='name';}}}},",
+        ));
     }
     out.push_str("};");
     out
@@ -302,7 +299,7 @@ pub fn render(
         input.to_owned()
     };
 
-    let doc = dom::parse(&html);
+    let doc = dom::parse(&html)?;
     let meta_script = build_meta_script(&doc.collect_meta());
     let mut scripts = load_scripts(doc.extract_scripts(), page_url, cfg, max_scripts);
     if !meta_script.is_empty() {

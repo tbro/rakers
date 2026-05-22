@@ -32,12 +32,12 @@ pub struct Document {
 }
 
 /// Parse `html` into a [`Document`] using the html5ever HTML5 parser.
-pub fn parse(html: &str) -> Document {
+pub fn parse(html: &str) -> anyhow::Result<Document> {
     let dom = parse_document(RcDom::default(), ParseOpts::default())
         .from_utf8()
         .read_from(&mut html.as_bytes())
-        .unwrap();
-    Document { dom }
+        .map_err(|e| anyhow!("html parse failed: {e:?}"))?;
+    Ok(Document { dom })
 }
 
 impl Document {
