@@ -125,10 +125,31 @@ function _r_el(tag) {
             // Script injection: Riot 2.x compiler sets script.text = compiledCode then
             // appends the script to document.documentElement to execute it.
             // Eval the code at global scope so riot.tag() registration takes effect.
-            if ((child.tagName === 'SCRIPT' || child.tagName === 'script') &&
-                    typeof child.text === 'string' && child.text) {
-                try { (0, eval)(child.text); } catch(e) {}
-                return child;
+            // Also support scripts appended with a src attribute: attempt a synchronous fetch via
+            // native _r_fetch_sync() (if available), resolve against page URL, and eval the fetched text
+            // unless the script is a module (type === 'module'). This mirrors browser behavior for
+            // non-module scripts injected dynamically.
+            if ((child.tagName === 'SCRIPT' || child.tagName === 'script')) {
+                // If script has inline text, execute it.
+                if (typeof child.text === 'string' && child.text) {
+                    try { (0, eval)(child.text); } catch(e) {}
+                    return child;
+                }
+                // Otherwise, if it has a src and is not a module, try to fetch and execute it synchronously.
+                try {
+                    var hasSrc = child.src && String(child.src).trim();
+                    var ttype = child.type || '';
+                    if (hasSrc && ttype.toLowerCase() !== 'module' && typeof _r_fetch_sync === 'function') {
+                        var abs = (typeof _r_parse_url === 'function') ? _r_parse_url(child.src, window.location && window.location.href).href : child.src;
+                        try {
+                            var fetched = _r_fetch_sync(abs) || '';
+                            if (fetched) {
+                                try { (0, eval)(fetched); } catch(e) {}
+                            }
+                        } catch(e) {}
+                        return child;
+                    }
+                } catch(e) {}
             }
             // Real DOM move semantics: remove from old parent before adding to new one.
             if (child.parentNode && child.parentNode !== this && child.parentNode._kids) {

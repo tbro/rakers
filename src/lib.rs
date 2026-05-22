@@ -517,6 +517,18 @@ mod tests {
     }
 
     #[test]
+    fn dynamically_appended_script_with_src_is_fetched_via_stub() {
+        let input = concat!(
+            "<!DOCTYPE html><html><head></head><body>",
+            "<script>window._r_fetch_sync = function(u) { return \"document.write('<p>fetched</p>');\"; };</script>",
+            "<script>var s = document.createElement('script'); s.src = 'https://example.com/fetch.js'; document.body.appendChild(s);</script>",
+            "</body></html>",
+        );
+        let out = render_simple(input, false, None).unwrap();
+        assert!(out.contains("<p>fetched</p>"), "dynamically fetched script executed");
+    }
+
+    #[test]
     fn console_messages_captured() {
         let js = r#"console.log("hello", "world"); console.warn("oops");"#;
         let rt = runtime::JsRuntime::with_timeout(std::time::Duration::from_secs(30));

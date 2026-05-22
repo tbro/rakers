@@ -70,6 +70,12 @@ mod boa_rt {
         static WRITTEN:         RefCell<String>      = const { RefCell::new(String::new()) };
         static LOGGED:          RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
         static BODY_INNER_HTML: RefCell<String>      = const { RefCell::new(String::new()) };
+        // HttpConfig fields for XHR/_r_fetch_sync
+        static XHR_UA:          RefCell<Option<String>> = const { RefCell::new(None) };
+        static XHR_HEADERS:     RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+        static XHR_PROXY:       RefCell<Option<String>> = const { RefCell::new(None) };
+        static XHR_TIMEOUT:     RefCell<Option<std::time::Duration>> = const { RefCell::new(None) };
+        static XHR_FORWARD_HEADERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
 
     /// A sandboxed JavaScript execution context.
@@ -110,10 +116,19 @@ mod boa_rt {
             ctx.runtime_limits_mut().set_recursion_limit(65536);
             setup_document(&mut ctx)?;
             setup_console(&mut ctx)?;
+            // Register sync XHR fetch helper so bootstrap's XHR/send and appendChild can synchronously fetch resources.
+            setup_xhr_fetch(&mut ctx)?;
 
             let bootstrap = super::make_bootstrap(page_url);
             ctx.eval(Source::from_bytes(bootstrap.as_bytes()))
                 .map_err(|e| anyhow!("bootstrap error: {:?}", e))?;
+
+            // Set XHR config from provided HttpConfig so _r_fetch_sync can use it.
+            XHR_UA.with(|u| u.borrow_mut().clone_from(&_cfg.user_agent));
+            XHR_HEADERS.with(|h| h.borrow_mut().clone_from(&_cfg.headers));
+            XHR_PROXY.with(|p| p.borrow_mut().clone_from(&_cfg.proxy));
+            XHR_TIMEOUT.with(|t| *t.borrow_mut() = None);
+            XHR_FORWARD_HEADERS.with(|f| f.set(false));
 
             for script in scripts {
                 if let Err(e) = ctx.eval(Source::from_bytes(script.as_bytes())) {
@@ -223,6 +238,72 @@ mod boa_rt {
             w.push('\n');
         });
         Ok(JsValue::undefined())
+    }
+
+    // Synchronous fetch exposed to JS as `_r_fetch_sync(url)` so the bootstrap can
+    // perform blocking template fetches for frameworks that rely on sync XHR.
+    fn boa_fetch_sync(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+        let url = if let Some(first) = args.first() {
+            match first.to_string(ctx) {
+                Ok(sv) => sv.to_std_string_escaped(),
+                Err(_) => String::new(),
+            }
+        } else {
+            String::new()
+        };
+        if url.is_empty() || !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Ok(JsValue::undefined());
+        }
+        let ua = XHR_UA.with(|u| u.borrow().clone());
+        let headers = XHR_HEADERS.with(|h| h.borrow().clone());
+        let proxy = XHR_PROXY.with(|p| p.borrow().clone());
+        let timeout = XHR_TIMEOUT.with(|t| *t.borrow());
+        let forward = XHR_FORWARD_HEADERS.with(std::cell::Cell::get);
+
+        let mut builder = ureq::AgentBuilder::new();
+        if let Some(ref proxy_url) = proxy {
+            if let Ok(p) = ureq::Proxy::new(proxy_url) {
+                builder = builder.proxy(p);
+            }
+        }
+        if let Some(dur) = timeout {
+            builder = builder.timeout(dur);
+        }
+        let agent = builder.build();
+        let mut req = agent.get(&url);
+        if let Some(ref ua_str) = ua {
+            req = req.set("User-Agent", ua_str);
+        }
+        if forward {
+            for (name, value) in &headers {
+                req = req.set(name, value);
+            }
+        }
+        let body = match req.call() {
+            Ok(resp) => resp.into_string().unwrap_or_default(),
+            Err(_) => String::new(),
+        };
+        // Return undefined if empty, otherwise return the string via evaluating a temporary string value.
+        if body.is_empty() {
+            Ok(JsValue::undefined())
+        } else {
+            // Create a JS string by evaluating a literal (escape quote boundaries)
+            let lit = format!("'{}'", body.replace("'", "\\'"));
+            let v = ctx.eval(Source::from_bytes(lit.as_bytes())).ok();
+            Ok(v.unwrap_or_else(|| JsValue::undefined()))
+        }
+    }
+
+    fn setup_xhr_fetch(ctx: &mut Context) -> anyhow::Result<()> {
+        // Build a temporary object with the native function and assign its field to the global name.
+        let mut init = ObjectInitializer::new(ctx);
+        init.function(NativeFunction::from_fn_ptr(boa_fetch_sync), js_string!("f"), 1);
+        let obj = init.build();
+        ctx.register_global_property(js_string!("__r_fetch_tmp"), obj, Attribute::all())
+            .map_err(|e| anyhow!("{e:?}"))?;
+        // Execute JS to move the function to a true global function and delete the temp.
+        ctx.eval(Source::from_bytes(b"(function(){this._r_fetch_sync = __r_fetch_tmp.f; try{ delete __r_fetch_tmp; }catch(e){} })();")).map_err(|e| anyhow!("register fetch fn failed: {e:?}"))?;
+        Ok(())
     }
 
     fn console_log(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
