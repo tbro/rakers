@@ -336,7 +336,7 @@ pub fn render(
     };
 
     let out =
-        doc.serialize_with_body_and_injection(effective_body, &runtime::JsRuntime::written_html());
+        doc.serialize_with_body_and_injection(effective_body, &runtime::JsRuntime::written_html())?;
     Ok(if clean { clean_document(out) } else { out })
 }
 

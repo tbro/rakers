@@ -11,6 +11,7 @@ use html5ever::{
     tendril::TendrilSink,
 };
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+use anyhow::anyhow;
 
 const VOID_ELEMENTS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
@@ -65,7 +66,7 @@ impl Document {
     /// with the JS-rendered DOM (from `document.body.innerHTML`).
     ///
     /// `extra` — appended just before `</body>`; carries output from `document.write`.
-    pub fn serialize_with_body_and_injection(&self, body_html: &str, extra: &str) -> String {
+    pub fn serialize_with_body_and_injection(&self, body_html: &str, extra: &str) -> anyhow::Result<String> {
         let mut bytes = Vec::new();
         serialize(
             &mut bytes,
@@ -75,9 +76,9 @@ impl Document {
                 ..Default::default()
             },
         )
-        .expect("serialization failed");
+        .map_err(|e| anyhow!("serialization failed: {e:?}"))?;
 
-        let mut html = String::from_utf8(bytes).expect("html5ever always outputs utf-8");
+        let mut html = String::from_utf8(bytes).map_err(|e| anyhow!("html5ever produced invalid UTF-8: {e}"))?;
 
         // Replace body content when JS rendered into the DOM.
         // Prefer targeted replacement (swap just the root element by id) so that
@@ -103,7 +104,7 @@ impl Document {
             }
         }
 
-        html
+        Ok(html)
     }
 }
 
