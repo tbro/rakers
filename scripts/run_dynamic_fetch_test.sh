@@ -7,6 +7,7 @@ set -euo pipefail
 ROOT=$(pwd)
 PAGES_DIR="$ROOT/scripts/test_pages"
 mkdir -p "$PAGES_DIR/server"
+trap 'rm -rf "$PAGES_DIR"' EXIT
 
 # Stubbed test page (no network required)
 cat > "$PAGES_DIR/stubbed.html" <<'HTML'
