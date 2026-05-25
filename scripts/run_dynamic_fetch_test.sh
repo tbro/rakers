@@ -9,39 +9,9 @@ PAGES_DIR="$ROOT/scripts/test_pages"
 mkdir -p "$PAGES_DIR/server"
 trap 'rm -rf "$PAGES_DIR"' EXIT
 
-# Stubbed test page (no network required)
-cat > "$PAGES_DIR/stubbed.html" <<'HTML'
-<!doctype html>
-<html><head></head><body>
-<script>
-  // Provide a stubbed native fetch used by the bootstrap
-  window._r_fetch_sync = function(url) {
-    return "document.write('<p>fetched-via-stub</p>');";
-  };
-</script>
-<script>
-  var s = document.createElement('script');
-  s.src = 'https://example.com/fetch.js';
-  document.body.appendChild(s);
-</script>
-</body></html>
-HTML
-
-# Live-server fetch page and server-side script
-cat > "$PAGES_DIR/server/fetch.js" <<'JS'
-document.write('<p>fetched-from-server</p>');
-JS
-
-cat > "$PAGES_DIR/test.html" <<'HTML'
-<!doctype html>
-<html><head></head><body>
-<script>
-  var s = document.createElement('script');
-  s.src = 'http://127.0.0.1:8000/fetch.js';
-  document.body.appendChild(s);
-</script>
-</body></html>
-HTML
+cp "$ROOT/tests/fixtures/dynamic_fetch_stubbed.html" "$PAGES_DIR/stubbed.html"
+cp "$ROOT/tests/fixtures/dynamic_fetch_live_server.js" "$PAGES_DIR/server/fetch.js"
+cp "$ROOT/tests/fixtures/dynamic_fetch_live.html" "$PAGES_DIR/test.html"
 
 # Build rakers
 cargo build --quiet
