@@ -57,6 +57,8 @@ jobs:
         run: cargo test --test cli ${{ matrix.flags }}
       - name: Integration tests
         run: cargo test --test integration ${{ matrix.flags }}
+      - name: Fixture tests
+        run: cargo test --test fixtures ${{ matrix.flags }}
 
   todomvc-compat:
     name: TodoMVC compatibility
@@ -72,20 +74,6 @@ jobs:
         run: cargo build -q
       - name: Run compatibility sweep
         run: bash scripts/todomvc_compat.sh ./target/debug/rakers
-
-  dynamic-fetch:
-    name: Dynamic script fetch smoke test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: dynamic-fetch
-      - name: Build
-        run: cargo build --verbose
-      - name: Run smoke test
-        run: ./scripts/run_dynamic_fetch_test.sh
 
   release:
     name: Release (${{ matrix.target }})
