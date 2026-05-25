@@ -293,7 +293,11 @@ mod boa_rt {
     fn setup_xhr_fetch(ctx: &mut Context) -> anyhow::Result<()> {
         // Build a temporary object with the native function and assign its field to the global name.
         let mut init = ObjectInitializer::new(ctx);
-        init.function(NativeFunction::from_fn_ptr(boa_fetch_sync), js_string!("f"), 1);
+        init.function(
+            NativeFunction::from_fn_ptr(boa_fetch_sync),
+            js_string!("f"),
+            1,
+        );
         let obj = init.build();
         ctx.register_global_property(js_string!("__r_fetch_tmp"), obj, Attribute::all())
             .map_err(|e| anyhow!("{e:?}"))?;

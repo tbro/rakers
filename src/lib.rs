@@ -525,7 +525,10 @@ mod tests {
             "</body></html>",
         );
         let out = render_simple(input, false, None).unwrap();
-        assert!(out.contains("<p>fetched</p>"), "dynamically fetched script executed");
+        assert!(
+            out.contains("<p>fetched</p>"),
+            "dynamically fetched script executed"
+        );
     }
 
     #[test]
