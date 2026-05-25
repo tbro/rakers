@@ -261,10 +261,10 @@ mod boa_rt {
         let forward = XHR_FORWARD_HEADERS.with(std::cell::Cell::get);
 
         let mut builder = ureq::AgentBuilder::new();
-        if let Some(ref proxy_url) = proxy {
-            if let Ok(p) = ureq::Proxy::new(proxy_url) {
-                builder = builder.proxy(p);
-            }
+        if let Some(ref proxy_url) = proxy
+            && let Ok(p) = ureq::Proxy::new(proxy_url)
+        {
+            builder = builder.proxy(p);
         }
         if let Some(dur) = timeout {
             builder = builder.timeout(dur);
