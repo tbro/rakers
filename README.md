@@ -212,7 +212,7 @@ The following globals are stubbed so typical JS bundles run without errors:
 - **`URL` / `URLSearchParams`** — relative URL resolution against the page URL; `searchParams` with full `get`/`set`/`has`
 - **`fetch`** — returns `Promise.resolve(response)` with an empty 200 OK body; `.then()` chains run, apps don't crash, but no data is loaded
 - **`XMLHttpRequest`** — synchronous mode (`open(method, url, false)`) fetches via the same HTTP client as the main page fetch; async mode schedules `onload` / `onreadystatechange` callbacks with the real response body; they fire during the deferred-callback flush pass
-- **Script injection** — `appendChild` evals `child.text` when the child is a `<script>` element, supporting compilers (e.g. Riot 2.x) that register components via dynamic script injection
+- **Script injection** — dynamically appended `<script>` elements are executed: inline `child.text` is evaled directly; elements with a `src` attribute are fetched via the same blocking HTTP client as the page load and then evaled. Supports compilers (e.g. Riot 2.x) that register components and frameworks that load chunked scripts at runtime.
 - **`DOMException` / `customElements`** — Web Components registry and DOM exception constructor
 - **`process`** — Node.js-style globals for webpack/Vite bundler compatibility
 - **Timers** — `setTimeout`, `setInterval`, `requestAnimationFrame`, `queueMicrotask`, and `MessageChannel` callbacks are collected and flushed after scripts finish
