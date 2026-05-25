@@ -283,14 +283,10 @@ mod boa_rt {
             Ok(resp) => resp.into_string().unwrap_or_default(),
             Err(_) => String::new(),
         };
-        // Return undefined if empty, otherwise return the string via evaluating a temporary string value.
         if body.is_empty() {
             Ok(JsValue::undefined())
         } else {
-            // Create a JS string by evaluating a literal (escape quote boundaries)
-            let lit = format!("'{}'", body.replace("'", "\\'"));
-            let v = ctx.eval(Source::from_bytes(lit.as_bytes())).ok();
-            Ok(v.unwrap_or_else(|| JsValue::undefined()))
+            Ok(js_string!(body).into())
         }
     }
 
